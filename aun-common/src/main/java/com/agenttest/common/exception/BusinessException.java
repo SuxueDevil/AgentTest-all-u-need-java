@@ -1,5 +1,7 @@
 package com.agenttest.common.exception;
 
+import lombok.Getter;
+
 /**
  * 业务异常 — 由业务代码主动抛出，携带错误码。
  * 被 {@link GlobalExceptionHandler} 拦截后转为统一 Response 格式返回前端。
@@ -10,6 +12,7 @@ package com.agenttest.common.exception;
  *   throw new BusinessException("操作失败");  // code 默认为 500
  * </pre>
  */
+@Getter
 public class BusinessException extends RuntimeException {
 
     /** 业务错误码，如 400 参数错误、404 资源不存在 */
@@ -32,6 +35,4 @@ public class BusinessException extends RuntimeException {
         super(message);
         this.code = 500;
     }
-
-    public int getCode() { return code; }
 }

@@ -1,13 +1,12 @@
 package com.agenttest.pojo.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * 待评测 Agent — 数据库实体，映射 agent 表。
@@ -15,7 +14,8 @@ import java.util.List;
  * {@link TableName} 指定表名和自动结果映射（JacksonTypeHandler 需要 autoResultMap=true）。
  * 字段名采用驼峰，MyBatis-Plus 自动映射到下划线格式的数据库列。
  */
-@TableName(value = "agent", autoResultMap = true)
+@Data
+@TableName("agent")
 public class Agent {
 
     /** 主键，数据库自增 */
@@ -28,7 +28,7 @@ public class Agent {
     /** 描述信息 */
     private String description;
 
-    /** 底层模型标识，如 gpt-4o、claude-opus-4-7 */
+    /** 底层模型标识（可选，仅标注参考），如 gpt-4o */
     private String model;
 
     /** 类型: llm / multi-modal / tool-use / code-gen / rag */
@@ -40,6 +40,15 @@ public class Agent {
     /** 外部 Agent API 的完整 URL，如 https://api.openai.com/v1/chat/completions */
     private String endpointUrl;
 
+    /** 请求模板 JSON，{{messages}} 占位符会被替换为实际消息数组 */
+    private String requestBody;
+
+    /** 响应协议: sse=流式 / json=普通JSON / auto=自动识别 */
+    private String responseProtocol;
+
+    /** 响应内容提取路径，如 choices[0].message.content，为空则取原始响应体 */
+    private String responseContentPath;
+
     /** 鉴权方式: none / bearer / api_key / basic */
     private String authType;
 
@@ -49,43 +58,13 @@ public class Agent {
      */
     private String authCredential;
 
-    /**
-     * 标签列表，使用 JacksonTypeHandler 处理 JSON 与 List<String> 的互转。
-     * 数据库存 JSON 数组: ["LLM","推理"]
-     */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private List<String> tags;
-
     /** 创建时间，数据库自动填充 */
     private LocalDateTime createdAt;
 
+    /** 逻辑删除标记（0=未删 / 1=已删），MyBatis-Plus 自动处理 */
+    @TableLogic
+    private Integer deleted;
+
     /** 更新时间，数据库自动更新 */
     private LocalDateTime updatedAt;
-
-    // ==================== getters / setters ====================
-
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-    public String getModel() { return model; }
-    public void setModel(String model) { this.model = model; }
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
-    public String getEndpointUrl() { return endpointUrl; }
-    public void setEndpointUrl(String endpointUrl) { this.endpointUrl = endpointUrl; }
-    public String getAuthType() { return authType; }
-    public void setAuthType(String authType) { this.authType = authType; }
-    public String getAuthCredential() { return authCredential; }
-    public void setAuthCredential(String authCredential) { this.authCredential = authCredential; }
-    public List<String> getTags() { return tags; }
-    public void setTags(List<String> tags) { this.tags = tags; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

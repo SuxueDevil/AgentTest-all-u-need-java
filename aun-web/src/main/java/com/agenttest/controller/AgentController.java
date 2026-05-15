@@ -29,39 +29,67 @@ public class AgentController {
 
     /**
      * 分页查询 Agent 列表。
-     * Query String 参数: page, pageSize, keyword, type, status
+     *
+     * @param query Query String 自动绑定: page, pageSize, keyword, type, status
+     * @return 分页结果，data 内嵌 PageResult<AgentVO>
      */
     @GetMapping
     public Response<PageResult<AgentVO>> list(AgentQueryDTO query) {
         return Response.success(agentService.page(query));
     }
 
-    /** 查询单个 Agent 详情，id 不存在时返回 404 错误 */
+    /**
+     * 查询单个 Agent 详情。
+     *
+     * @param id Agent 主键 ID
+     * @return AgentVO，id 不存在时返回 404 错误
+     */
     @GetMapping("/{id}")
     public Response<AgentVO> detail(@PathVariable Long id) {
         return Response.success(agentService.getById(id));
     }
 
-    /** 创建 Agent，请求体校验失败返回 400 */
+    /**
+     * 创建 Agent。
+     *
+     * @param dto Agent 创建参数（name、type 必填），校验失败返回 400
+     * @return 创建后的 AgentVO
+     */
     @PostMapping
     public Response<AgentVO> create(@Valid @RequestBody AgentCreateDTO dto) {
         return Response.success(agentService.create(dto));
     }
 
-    /** 更新 Agent，支持部分字段更新 */
+    /**
+     * 更新 Agent，支持部分字段更新。
+     *
+     * @param id  Agent 主键 ID
+     * @param dto 部分更新的字段
+     * @return 更新后的 AgentVO
+     */
     @PutMapping("/{id}")
     public Response<AgentVO> update(@PathVariable Long id, @RequestBody AgentUpdateDTO dto) {
         return Response.success(agentService.update(id, dto));
     }
 
-    /** 删除 Agent */
+    /**
+     * 删除 Agent。
+     *
+     * @param id Agent 主键 ID
+     * @return 空 data，删除成功
+     */
     @DeleteMapping("/{id}")
     public Response<Void> delete(@PathVariable Long id) {
         agentService.delete(id);
         return Response.success();
     }
 
-    /** 测试 Agent API 连通性，返回 true/false */
+    /**
+     * 测试 Agent API 连通性。
+     *
+     * @param id Agent 主键 ID
+     * @return true 表示连通，false 表示失败
+     */
     @PostMapping("/{id}/test-connection")
     public Response<Boolean> testConnection(@PathVariable Long id) {
         return Response.success(agentService.testConnection(id));

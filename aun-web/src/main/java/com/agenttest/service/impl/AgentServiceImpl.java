@@ -4,6 +4,7 @@ import cn.hutool.core.bean.BeanUtil;
 import com.agenttest.common.PageResult;
 import com.agenttest.common.exception.BusinessException;
 import com.agenttest.mapper.AgentMapper;
+import com.agenttest.mapper.EvaluationResultMapper;
 import com.agenttest.pojo.dto.AgentCreateDTO;
 import com.agenttest.pojo.dto.AgentQueryDTO;
 import com.agenttest.pojo.dto.AgentUpdateDTO;
@@ -19,7 +20,10 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -39,11 +43,14 @@ public class AgentServiceImpl implements AgentService {
 
     private final AgentMapper agentMapper;
     private final RestTemplate restTemplate;
+    private final EvaluationResultMapper evaluationResultMapper;
 
-    /** 构造器注入，Spring 自动装配 AgentMapper 和 RestTemplate */
-    public AgentServiceImpl(AgentMapper agentMapper, RestTemplate restTemplate) {
+    /** 构造器注入 */
+    public AgentServiceImpl(AgentMapper agentMapper, RestTemplate restTemplate,
+                             EvaluationResultMapper evaluationResultMapper) {
         this.agentMapper = agentMapper;
         this.restTemplate = restTemplate;
+        this.evaluationResultMapper = evaluationResultMapper;
     }
 
     // ==================== 公开方法 ====================
@@ -52,6 +59,9 @@ public class AgentServiceImpl implements AgentService {
      * 分页查询 Agent。
      * keyword 同时模糊匹配 name 和 description 字段；
      * type 和 status 为精确匹配，为空时不作为筛选条件。
+     *
+     * @param query 查询条件（keyword / type / status）及分页参数
+     * @return 分页结果，含 AgentVO 列表及 total / page / pageSize
      */
     @Override
     public PageResult<AgentVO> page(AgentQueryDTO query) {
@@ -78,19 +88,33 @@ public class AgentServiceImpl implements AgentService {
                 .map(this::toVO)
                 .collect(Collectors.toList());
 
+        log.info("分页查询 Agent 完成，共 {} 条", page.getTotal());
         return new PageResult<>(voList, page.getTotal(),
                 query.getPage(), query.getPageSize());
     }
 
-    /** 查询单个 Agent 详情，不存在抛 BusinessException(404) */
+    /**
+     * 查询单个 Agent 详情。
+     *
+     * @param id Agent 主键 ID
+     * @return AgentVO（不含 authCredential）
+     * @throws BusinessException 当 Agent 不存在时抛出，错误码 404
+     */
     @Override
     public AgentVO getById(Long id) {
+        log.info("查询 Agent 详情，id={}", id);
         return toVO(getEntityById(id));
     }
 
-    /** 创建 Agent，默认状态设为 active，返回 VO */
+    /**
+     * 创建 Agent，默认状态设为 active。
+     *
+     * @param dto Agent 创建参数（name、type 必填）
+     * @return 创建后的 AgentVO，含数据库自动生成的主键
+     */
     @Override
     public AgentVO create(AgentCreateDTO dto) {
+        log.info("创建 Agent，name={} type={}", dto.getName(), dto.getType());
         Agent agent = new Agent();
         BeanUtil.copyProperties(dto, agent);
         agent.setStatus("active");
@@ -98,19 +122,37 @@ public class AgentServiceImpl implements AgentService {
         return toVO(agent);
     }
 
-    /** 更新 Agent，使用 BeanUtil.copyProperties 将 DTO 非 null 字段复制到 entity */
+    /**
+     * 更新 Agent，使用 BeanUtil.copyProperties 将 DTO 非 null 字段复制到 entity。
+     * 未传入的字段不覆盖，authCredential 传空字符串时不更新。
+     *
+     * @param id  Agent 主键 ID
+     * @param dto 部分更新的字段
+     * @return 更新后的 AgentVO
+     * @throws BusinessException 当 Agent 不存在时抛出，错误码 404
+     */
     @Override
     public AgentVO update(Long id, AgentUpdateDTO dto) {
+        log.info("更新 Agent，id={}", id);
         Agent agent = getEntityById(id);
         BeanUtil.copyProperties(dto, agent);
         agentMapper.updateById(agent);
         return toVO(agent);
     }
 
-    /** 删除 Agent，先校验存在再执行删除 */
+    /**
+     * 删除 Agent，先校验存在再执行物理删除。
+     *
+     * @param id Agent 主键 ID
+     * @throws BusinessException 当 Agent 不存在时抛出，错误码 404
+     */
     @Override
     public void delete(Long id) {
+        log.info("删除 Agent，id={}", id);
         getEntityById(id);           // 不存在会抛异常
+        // 先删除关联的评测结果，避免外键约束报错
+        evaluationResultMapper.delete(new LambdaQueryWrapper<com.agenttest.pojo.entity.EvaluationResult>()
+                .eq(com.agenttest.pojo.entity.EvaluationResult::getAgentId, id));
         agentMapper.deleteById(id);
     }
 
@@ -119,6 +161,10 @@ public class AgentServiceImpl implements AgentService {
      * 向 agent.endpointUrl 发送 POST 请求，body 为一条简单的 ping 消息。
      * 根据 agent.authType 自动设置请求头鉴权。
      * 请求成功（2xx）返回 true，任何异常（超时、网络错误、非 2xx）返回 false。
+     *
+     * @param id Agent 主键 ID
+     * @return true 表示连通，false 表示不通（不抛异常）
+     * @throws BusinessException 当 Agent 未配置 endpointUrl 时抛出，错误码 400
      */
     @Override
     public boolean testConnection(Long id) {
@@ -153,6 +199,10 @@ public class AgentServiceImpl implements AgentService {
     /**
      * 按 ID 查询 Agent entity，不存在时抛出 BusinessException。
      * 私有方法，供内部逻辑使用（testConnection 等需要 entity 的 authCredential）。
+     *
+     * @param id Agent 主键 ID
+     * @return Agent 数据库实体（含 authCredential）
+     * @throws BusinessException 当 Agent 不存在时抛出，错误码 404
      */
     private Agent getEntityById(Long id) {
         Agent agent = agentMapper.selectById(id);
@@ -166,6 +216,9 @@ public class AgentServiceImpl implements AgentService {
      * entity → VO 转换。
      * 使用 Hutool BeanUtil.copyProperties 自动复制同名字段，
      * authCredential 因 VO 中无此字段而自动跳过，从而实现安全脱敏。
+     *
+     * @param entity Agent 数据库实体
+     * @return AgentVO（不含 authCredential）
      */
     private AgentVO toVO(Agent entity) {
         AgentVO vo = new AgentVO();
@@ -179,9 +232,14 @@ public class AgentServiceImpl implements AgentService {
      *   <li>bearer  → Authorization: Bearer xxx</li>
      *   <li>api_key → X-API-Key: xxx</li>
      *   <li>basic   → Authorization: Basic base64(xxx)</li>
+     *   <li>custom  → 解析 authCredential JSON，逐个设为 Header</li>
      *   <li>none / 其他 → 不添加鉴权头</li>
      * </ul>
+     *
+     * @param headers HTTP 请求头（会被原地修改）
+     * @param agent   Agent 实体，取其 authType 和 authCredential
      */
+    @SuppressWarnings("unchecked")
     private void applyAuth(HttpHeaders headers, Agent agent) {
         if ("bearer".equalsIgnoreCase(agent.getAuthType())) {
             headers.setBearerAuth(agent.getAuthCredential());
@@ -189,6 +247,14 @@ public class AgentServiceImpl implements AgentService {
             headers.set("X-API-Key", agent.getAuthCredential());
         } else if ("basic".equalsIgnoreCase(agent.getAuthType())) {
             headers.setBasicAuth(agent.getAuthCredential());
+        } else if ("custom".equalsIgnoreCase(agent.getAuthType())) {
+            try {
+                Map<String, String> headerMap = new ObjectMapper().readValue(
+                        agent.getAuthCredential(), Map.class);
+                headerMap.forEach(headers::set);
+            } catch (Exception e) {
+                log.warn("自定义Header解析失败: {}", e.getMessage());
+            }
         }
     }
 }

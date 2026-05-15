@@ -1,0 +1,47 @@
+<!--
+  日志策略
+  - 控制台：彩色，logger 仅显示类名，简洁可读
+  - 文件：完整时间戳 + 全路径 logger，便于生产排查
+  - mapper 默认 INFO（不打印 SQL），需要时改为 DEBUG
+-->
+<configuration>
+    <property name="LOG_DIR" value="logs"/>
+    <property name="LOG_FILE" value="${LOG_DIR}/app.log"/>
+
+    <!-- 控制台输出 — 可读优先：emoji级别 + 类名 -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss} %highlight(%-5level) %cyan(%logger{0}) - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 文件输出 — 完整优先：毫秒时间戳 + 全路径logger + 线程 -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/app.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- 框架 - 安静 -->
+    <logger name="org.springframework" level="INFO"/>
+    <logger name="org.apache" level="INFO"/>
+
+    <!-- mapper - DEBUG 输出 SQL，不需要时改 INFO -->
+    <logger name="com.agenttest.mapper" level="DEBUG"/>
+
+    <!-- 业务层 - DEBUG 输出核心流程 -->
+    <logger name="com.agenttest.controller" level="DEBUG"/>
+    <logger name="com.agenttest.service" level="DEBUG"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+</configuration>

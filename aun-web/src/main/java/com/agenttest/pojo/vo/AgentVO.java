@@ -1,52 +1,44 @@
 package com.agenttest.pojo.vo;
 
+import lombok.Data;
+
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * Agent 视图对象 — Controller 返回给前端的 Agent 数据。
  * <p>
- * 与 entity 的关键区别: <b>不含 authCredential 字段</b>，防止敏感凭证泄露到前端。
- * 其他字段与 entity 一致，由 Service 层通过 BeanUtil.copyProperties 从 entity 转换。
+ * 与 entity 字段一致，由 Service 层通过 BeanUtil.copyProperties 从 entity 转换。
+ * 编辑时前端需回显 authCredential，因此 VO 包含该字段（内部评测工具，非对外暴露）。
  */
+@Data
 public class AgentVO {
 
+    /** 主键 ID */
     private Long id;
+    /** Agent 名称 */
     private String name;
+    /** 描述信息 */
     private String description;
+    /** 底层模型标识（可选） */
     private String model;
+    /** Agent 类型: llm / multi-modal / tool-use / code-gen / rag */
     private String type;
+    /** 状态: active=运行中 / inactive=已停用 / evaluating=评测中 / error=异常 */
     private String status;
-    /** Agent API 端点 URL */
+    /** 外部 Agent API 端点 URL */
     private String endpointUrl;
-    /** 鉴权方式（仅表示类型，不含凭证值） */
+    /** 请求模板 JSON */
+    private String requestBody;
+    /** 响应协议: sse / json / auto */
+    private String responseProtocol;
+    /** 响应内容提取路径 */
+    private String responseContentPath;
+    /** 鉴权方式 */
     private String authType;
-    private List<String> tags;
+    /** 鉴权凭证 — 编辑时需回显，仅内部评测使用 */
+    private String authCredential;
+    /** 创建时间 */
     private LocalDateTime createdAt;
+    /** 更新时间 */
     private LocalDateTime updatedAt;
-
-    // ==================== getters / setters ====================
-
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-    public String getModel() { return model; }
-    public void setModel(String model) { this.model = model; }
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
-    public String getEndpointUrl() { return endpointUrl; }
-    public void setEndpointUrl(String endpointUrl) { this.endpointUrl = endpointUrl; }
-    public String getAuthType() { return authType; }
-    public void setAuthType(String authType) { this.authType = authType; }
-    public List<String> getTags() { return tags; }
-    public void setTags(List<String> tags) { this.tags = tags; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

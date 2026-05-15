@@ -1,11 +1,14 @@
 package com.agenttest.pojo.dto;
 
+import lombok.Data;
+
 /**
  * Agent 列表查询参数 — Controller 通过 Query String 自动绑定。
  * <p>
  * Spring MVC 会自动将 ?page=1&pageSize=20&keyword=xxx&type=llm 绑定到此对象的字段。
  * 未传的字段使用默认值: page=1, pageSize=20。
  */
+@Data
 public class AgentQueryDTO {
 
     /** 页码，从 1 开始，默认 1 */
@@ -22,17 +25,4 @@ public class AgentQueryDTO {
 
     /** 按状态筛选 */
     private String status;
-
-    // ==================== getters / setters ====================
-
-    public Integer getPage() { return page; }
-    public void setPage(Integer page) { this.page = page; }
-    public Integer getPageSize() { return pageSize; }
-    public void setPageSize(Integer pageSize) { this.pageSize = pageSize; }
-    public String getKeyword() { return keyword; }
-    public void setKeyword(String keyword) { this.keyword = keyword; }
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
 }
