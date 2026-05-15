@@ -2,10 +2,12 @@ server:
   port: 8080
 
 spring:
+  profiles:
+    active: dev
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/agent_aun?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true}
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:}
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/agent_aun?createDatabaseIfNotExist=true
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jackson:
