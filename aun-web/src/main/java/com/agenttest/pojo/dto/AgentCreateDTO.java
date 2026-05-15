@@ -1,7 +1,6 @@
 package com.agenttest.pojo.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import java.util.List;
 
 /**
  * Agent 创建请求 — Controller 接收的入参。
@@ -32,9 +31,6 @@ public class AgentCreateDTO {
     /** 鉴权凭证 */
     private String authCredential;
 
-    /** 标签列表 */
-    private List<String> tags;
-
     // ==================== getters / setters ====================
 
     public String getName() { return name; }
@@ -51,6 +47,4 @@ public class AgentCreateDTO {
     public void setAuthType(String authType) { this.authType = authType; }
     public String getAuthCredential() { return authCredential; }
     public void setAuthCredential(String authCredential) { this.authCredential = authCredential; }
-    public List<String> getTags() { return tags; }
-    public void setTags(List<String> tags) { this.tags = tags; }
 }

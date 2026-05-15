@@ -1,13 +1,10 @@
 package com.agenttest.pojo.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * 待评测 Agent — 数据库实体，映射 agent 表。
@@ -15,7 +12,7 @@ import java.util.List;
  * {@link TableName} 指定表名和自动结果映射（JacksonTypeHandler 需要 autoResultMap=true）。
  * 字段名采用驼峰，MyBatis-Plus 自动映射到下划线格式的数据库列。
  */
-@TableName(value = "agent", autoResultMap = true)
+@TableName("agent")
 public class Agent {
 
     /** 主键，数据库自增 */
@@ -49,12 +46,6 @@ public class Agent {
      */
     private String authCredential;
 
-    /**
-     * 标签列表，使用 JacksonTypeHandler 处理 JSON 与 List<String> 的互转。
-     * 数据库存 JSON 数组: ["LLM","推理"]
-     */
-    @TableField(typeHandler = JacksonTypeHandler.class)
-    private List<String> tags;
 
     /** 创建时间，数据库自动填充 */
     private LocalDateTime createdAt;
@@ -82,8 +73,6 @@ public class Agent {
     public void setAuthType(String authType) { this.authType = authType; }
     public String getAuthCredential() { return authCredential; }
     public void setAuthCredential(String authCredential) { this.authCredential = authCredential; }
-    public List<String> getTags() { return tags; }
-    public void setTags(List<String> tags) { this.tags = tags; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

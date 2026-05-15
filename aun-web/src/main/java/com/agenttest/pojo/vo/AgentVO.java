@@ -1,7 +1,6 @@
 package com.agenttest.pojo.vo;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * Agent 视图对象 — Controller 返回给前端的 Agent 数据。
@@ -21,7 +20,6 @@ public class AgentVO {
     private String endpointUrl;
     /** 鉴权方式（仅表示类型，不含凭证值） */
     private String authType;
-    private List<String> tags;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -43,8 +41,6 @@ public class AgentVO {
     public void setEndpointUrl(String endpointUrl) { this.endpointUrl = endpointUrl; }
     public String getAuthType() { return authType; }
     public void setAuthType(String authType) { this.authType = authType; }
-    public List<String> getTags() { return tags; }
-    public void setTags(List<String> tags) { this.tags = tags; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
