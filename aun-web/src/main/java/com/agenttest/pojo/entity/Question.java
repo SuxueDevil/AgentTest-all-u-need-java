@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -83,7 +85,8 @@ public class Question {
      * turnOrder: 轮次序号（1-based）；role: user / assistant；content: 消息文本。
      */
     public static class Turn {
-        /** 轮次序号，从 1 开始 */
+        /** 轮次序号，从 1 开始（兼容 snake_case: turn_order） */
+        @JsonAlias("turn_order")
         private Integer turnOrder;
         /** 角色: user / assistant */
         private String role;

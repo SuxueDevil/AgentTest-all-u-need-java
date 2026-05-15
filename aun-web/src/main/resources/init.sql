@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS question (
     category        VARCHAR(30) NOT NULL COMMENT '分类: reasoning/coding/qa/translation/summarization',
     difficulty      VARCHAR(10) NOT NULL DEFAULT 'medium' COMMENT '难度: easy/medium/hard',
     question_type   VARCHAR(10) NOT NULL DEFAULT 'single' COMMENT 'single 单轮 / multi 多轮',
-    turns           JSON COMMENT '多轮对话内容 [{turn_order, role, content}]',
+    turns           JSON COMMENT '多轮对话内容 [{turnOrder, role, content}]',
     expected_answer TEXT COMMENT '期望答案（评分参考）',
     tags            JSON COMMENT '标签',
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -102,13 +102,13 @@ CREATE TABLE IF NOT EXISTS evaluation_report (
 INSERT INTO question (title, category, difficulty, question_type, turns, expected_answer, tags) VALUES
 ('三段论推理：所有A是B，所有B是C，那么A和C的关系是什么？', 'reasoning', 'easy', 'single', NULL, '所有A是C，这是典型的三段论推理结论', '["逻辑","三段论"]'),
 ('分析：如果全球气温上升3°C，可能产生哪些连锁反应？', 'reasoning', 'medium', 'multi',
- '[{"turn_order":1,"role":"user","content":"如果全球气温上升3°C，沿海城市会怎样？"},{"turn_order":2,"role":"assistant","content":"海平面可能上升约0.5-1米，沿海城市面临洪涝风险。"},{"turn_order":3,"role":"user","content":"那对农业呢？"}]',
+ '[{"turnOrder":1,"role":"user","content":"如果全球气温上升3°C，沿海城市会怎样？"},{"turnOrder":2,"role":"assistant","content":"海平面可能上升约0.5-1米，沿海城市面临洪涝风险。"},{"turnOrder":3,"role":"user","content":"那对农业呢？"}]',
  '应分析海平面上升、极端天气、粮食减产、生态破坏等连锁反应', '["气候","推理"]'),
 ('为什么1+1=2？请从数学基础角度解释', 'reasoning', 'hard', 'single', NULL, '皮亚诺公理定义自然数，1是S(0)，2是S(S(0))，1+1=2来源于加法定义', '["数学","基础"]'),
 ('论证题：科技发展是否会加剧社会不平等？', 'reasoning', 'medium', 'single', NULL, '从技术获取成本、教育差距、就业替代等角度辩证分析', '["社会","辩证"]'),
 ('分析这句话的逻辑谬误："因为他有名，所以他说的是对的"', 'reasoning', 'easy', 'single', NULL, '诉诸权威的谬误：名人的知名度与其言论的正确性无关', '["逻辑谬误","批判思维"]'),
 ('多轮归因分析：某电商平台GMV下滑20%，请逐层分析原因', 'reasoning', 'hard', 'multi',
- '[{"turn_order":1,"role":"user","content":"我们的GMV下滑20%，先看是不是流量问题？"},{"turn_order":2,"role":"assistant","content":"先拉流量数据对比，DAU和曝光量是关键指标。"},{"turn_order":3,"role":"user","content":"DAU降了5%，但转化率从3%跌到1.8%，这才是主因吧？"},{"turn_order":4,"role":"assistant","content":"对，转化率下跌比流量下跌更致命，需要排查落地页、商品详情、支付流程。"}]',
+ '[{"turnOrder":1,"role":"user","content":"我们的GMV下滑20%，先看是不是流量问题？"},{"turnOrder":2,"role":"assistant","content":"先拉流量数据对比，DAU和曝光量是关键指标。"},{"turnOrder":3,"role":"user","content":"DAU降了5%，但转化率从3%跌到1.8%，这才是主因吧？"},{"turnOrder":4,"role":"assistant","content":"对，转化率下跌比流量下跌更致命，需要排查落地页、商品详情、支付流程。"}]',
  '归因分析应从流量、转化率、客单价逐层拆解，定位关键瓶颈', '["商业分析","归因"]');
 
 -- 编程类（coding）— 6 条（4 单轮 + 2 多轮）
@@ -118,10 +118,10 @@ INSERT INTO question (title, category, difficulty, question_type, turns, expecte
 ('优化查询：数据库中有一个百万级用户表，需要按姓名模糊搜索并排序，如何设计索引？', 'coding', 'medium', 'single', NULL, '使用全文索引或倒排索引，B+树对模糊前缀有效，like "%xx%"走全表扫描需考虑ES', '["数据库","索引","优化"]'),
 ('实现一个支持过期时间的LRU缓存', 'coding', 'hard', 'single', NULL, '哈希表+双向链表+过期时间戳，get时检查过期，put时淘汰最近最少使用且未过期的', '["数据结构","缓存","LRU"]'),
 ('多轮代码调试：这段代码为什么死锁？', 'coding', 'hard', 'multi',
- '[{"turn_order":1,"role":"user","content":"线程A持有lock1等待lock2，线程B持有lock2等待lock1，为什么死锁了？"},{"turn_order":2,"role":"assistant","content":"这是经典的循环等待，两个线程互相持有对方需要的锁。"},{"turn_order":3,"role":"user","content":"怎么解决？改成tryLock超时行吗？"}]',
+ '[{"turnOrder":1,"role":"user","content":"线程A持有lock1等待lock2，线程B持有lock2等待lock1，为什么死锁了？"},{"turnOrder":2,"role":"assistant","content":"这是经典的循环等待，两个线程互相持有对方需要的锁。"},{"turnOrder":3,"role":"user","content":"怎么解决？改成tryLock超时行吗？"}]',
  '分析死锁四个条件（互斥、持有等待、不可剥夺、循环等待），并给出破坏其中任一条件的方案', '["并发","死锁","Java"]'),
 ('设计一个短链接系统，支持高并发访问', 'coding', 'medium', 'multi',
- '[{"turn_order":1,"role":"user","content":"短链接系统的核心是什么？"},{"turn_order":2,"role":"assistant","content":"核心是发号器+base62编码，还要考虑缓存和跳转。"},{"turn_order":3,"role":"user","content":"发号器怎么做？分布式ID生成？"}]',
+ '[{"turnOrder":1,"role":"user","content":"短链接系统的核心是什么？"},{"turnOrder":2,"role":"assistant","content":"核心是发号器+base62编码，还要考虑缓存和跳转。"},{"turnOrder":3,"role":"user","content":"发号器怎么做？分布式ID生成？"}]',
  '发号器可用雪花算法或自增ID，短码=base62(ID)，缓存存储映射关系，跳转做301重定向', '["系统设计","短链接","分布式"]');
 
 -- 问答类（qa）— 5 条（4 单轮 + 1 多轮）
@@ -131,7 +131,7 @@ INSERT INTO question (title, category, difficulty, question_type, turns, expecte
 ('Transformer的注意力机制是如何工作的？', 'qa', 'hard', 'single', NULL, 'QK^T计算相似度，除以√dk缩放，softmax归一化得到权重，加权求和V得到输出', '["深度学习","Transformer","注意力"]'),
 ('Docker容器和虚拟机的核心区别？', 'qa', 'easy', 'single', NULL, '容器共享宿主机内核，启动快、资源少；虚拟机有完整OS，隔离强但开销大', '["Docker","虚拟化"]'),
 ('多轮技术答疑：微服务拆分后，如何处理分布式事务？', 'qa', 'hard', 'multi',
- '[{"turn_order":1,"role":"user","content":"我们把单体拆成微服务后，跨服务的事务怎么处理？"},{"turn_order":2,"role":"assistant","content":"主要有几种方案：Saga、TCC、本地消息表+MQ、Seata。"},{"turn_order":3,"role":"user","content":"Saga和TCC的区别是什么？选哪个？"}]',
+ '[{"turnOrder":1,"role":"user","content":"我们把单体拆成微服务后，跨服务的事务怎么处理？"},{"turnOrder":2,"role":"assistant","content":"主要有几种方案：Saga、TCC、本地消息表+MQ、Seata。"},{"turnOrder":3,"role":"user","content":"Saga和TCC的区别是什么？选哪个？"}]',
  'Saga适合长事务，用补偿回滚，最终一致性；TCC分Try-Confirm-Cancel三阶段，适合强一致性场景', '["微服务","分布式事务","Saga"]');
 
 -- 翻译类（translation）— 3 条（全单轮）
