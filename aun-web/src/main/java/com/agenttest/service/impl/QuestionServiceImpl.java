@@ -62,6 +62,9 @@ public class QuestionServiceImpl implements QuestionService {
     /**
      * 分页查询问题。
      * keyword 模糊匹配 title；category、difficulty、questionType 精确匹配。
+     *
+     * @param query 查询条件（keyword / category / difficulty / questionType）及分页参数
+     * @return 分页结果，含 QuestionVO 列表及 total / page / pageSize
      */
     @Override
     public PageResult<QuestionVO> page(QuestionQueryDTO query) {
@@ -92,13 +95,24 @@ public class QuestionServiceImpl implements QuestionService {
         return new PageResult<>(voList, page.getTotal(), query.getPage(), query.getPageSize());
     }
 
-    /** 查询单个问题详情 */
+    /**
+     * 查询单个问题详情。
+     *
+     * @param id 问题主键 ID
+     * @return QuestionVO
+     * @throws BusinessException 当问题不存在时抛出，错误码 404
+     */
     @Override
     public QuestionVO getById(Long id) {
         return toVO(getEntityById(id));
     }
 
-    /** 创建问题，设置默认值后插入 */
+    /**
+     * 创建问题，difficulty 未传默认 medium，questionType 未传默认 single。
+     *
+     * @param dto 问题创建参数（title、category 必填）
+     * @return 创建后的 QuestionVO
+     */
     @Override
     public QuestionVO create(QuestionCreateDTO dto) {
         Question question = new Question();
@@ -114,7 +128,14 @@ public class QuestionServiceImpl implements QuestionService {
         return toVO(question);
     }
 
-    /** 更新问题，DTO 非 null 字段覆盖到 entity */
+    /**
+     * 更新问题，DTO 非 null 字段覆盖到 entity。
+     *
+     * @param id  问题主键 ID
+     * @param dto 部分更新的字段
+     * @return 更新后的 QuestionVO
+     * @throws BusinessException 当问题不存在时抛出，错误码 404
+     */
     @Override
     public QuestionVO update(Long id, QuestionUpdateDTO dto) {
         Question question = getEntityById(id);
@@ -123,14 +144,25 @@ public class QuestionServiceImpl implements QuestionService {
         return toVO(question);
     }
 
-    /** 删除单个问题 */
+    /**
+     * 删除单个问题。
+     *
+     * @param id 问题主键 ID
+     * @throws BusinessException 当问题不存在时抛出，错误码 404
+     */
     @Override
     public void delete(Long id) {
         getEntityById(id);
         questionMapper.deleteById(id);
     }
 
-    /** 批量删除，返回实际删除条数 */
+    /**
+     * 批量删除问题。
+     *
+     * @param ids 问题主键 ID 列表
+     * @return 实际删除的条数
+     * @throws BusinessException 当 ids 为空时抛出，错误码 400
+     */
     @Override
     public int batchDelete(List<Long> ids) {
         if (ids == null || ids.isEmpty()) {
@@ -143,8 +175,12 @@ public class QuestionServiceImpl implements QuestionService {
 
     /**
      * 批量导入问题。
-     * 根据文件名后缀判断格式，逐条解析后批量插入。
-     * 返回 Map: { successCount: int, failCount: int, errors: [{row, message}] }。
+     * 根据文件名后缀判断格式（.csv / .json），逐条解析后批量插入。
+     *
+     * @param fileBytes 上传文件的字节数组
+     * @param filename  原始文件名，用于判断格式（支持 .csv / .json）
+     * @return Map: { successCount: int, failCount: int, errors: [{row, message}] }
+     * @throws BusinessException 当文件格式不支持时抛出，错误码 400
      */
     @Override
     public Map<String, Object> importQuestions(byte[] fileBytes, String filename) {
@@ -157,7 +193,12 @@ public class QuestionServiceImpl implements QuestionService {
         throw new BusinessException(400, "不支持的文件格式，请上传 CSV 或 JSON 文件");
     }
 
-    /** 导出问题，按指定格式返回文件数据（bytes + filename + contentType） */
+    /**
+     * 导出全部问题为文件。
+     *
+     * @param format 导出格式（csv / json），默认 json
+     * @return 文件导出结果（bytes + filename + contentType）
+     */
     @Override
     public FileExportResult exportQuestions(String format) {
         List<Question> all = questionMapper.selectList(null);
@@ -173,7 +214,10 @@ public class QuestionServiceImpl implements QuestionService {
 
     /**
      * CSV 导入 — 首行为表头，后续每行一条问题记录。
-     * 列顺序: title, category, difficulty, questionType, expectedAnswer, tags(逗号分隔)
+     * 列顺序: title, category, difficulty, questionType, expectedAnswer, tags(逗号分隔)。
+     *
+     * @param fileBytes CSV 文件字节数组
+     * @return Map: { successCount, failCount, errors: [{row, message}] }
      */
     private Map<String, Object> importFromCsv(byte[] fileBytes) {
         int successCount = 0;
@@ -224,7 +268,13 @@ public class QuestionServiceImpl implements QuestionService {
         return result;
     }
 
-    /** JSON 导入 — 解析 JSON 数组，每项映射为 Question 对象 */
+    /**
+     * JSON 导入 — 解析 JSON 数组，每项反序列化为 Question 对象后插入。
+     *
+     * @param fileBytes JSON 文件字节数组
+     * @return Map: { successCount, failCount, errors: [{row, message}] }
+     * @throws BusinessException 当 JSON 解析失败时抛出，错误码 400
+     */
     private Map<String, Object> importFromJson(byte[] fileBytes) {
         int successCount = 0;
         int failCount = 0;
@@ -263,11 +313,16 @@ public class QuestionServiceImpl implements QuestionService {
 
     // ==================== 导出实现 ====================
 
-    /** 导出为 CSV 字节数组，含表头行 */
+    /**
+     * 导出为 CSV 字节数组，首行为表头。
+     *
+     * @param questions 待导出的问题列表
+     * @return CSV 文件字节数组
+     */
     private byte[] exportToCsv(List<Question> questions) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         CsvWriter writer = CsvUtil.getWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8));
-        // 写入表头@
+        // 写入表头
         writer.write(new String[]{"title", "category", "difficulty", "questionType",
                 "expectedAnswer", "tags"});
 
@@ -286,7 +341,13 @@ public class QuestionServiceImpl implements QuestionService {
         return out.toByteArray();
     }
 
-    /** 导出为 JSON 字节数组，直接序列化 entity 列表 */
+    /**
+     * 导出为 JSON 字节数组，直接序列化 entity 列表。
+     *
+     * @param questions 待导出的问题列表
+     * @return JSON 文件字节数组
+     * @throws BusinessException 当序列化失败时抛出，错误码 500
+     */
     private byte[] exportToJson(List<Question> questions) {
         try {
             return objectMapper.writeValueAsBytes(questions);
@@ -297,7 +358,13 @@ public class QuestionServiceImpl implements QuestionService {
 
     // ==================== 私有方法 ====================
 
-    /** 按 ID 查询 Question entity，不存在时抛 BusinessException */
+    /**
+     * 按 ID 查询 Question entity，不存在时抛 BusinessException。
+     *
+     * @param id 问题主键 ID
+     * @return Question 数据库实体
+     * @throws BusinessException 当问题不存在时抛出，错误码 404
+     */
     private Question getEntityById(Long id) {
         Question question = questionMapper.selectById(id);
         if (question == null) {
@@ -306,7 +373,12 @@ public class QuestionServiceImpl implements QuestionService {
         return question;
     }
 
-    /** entity → VO 转换 */
+    /**
+     * entity → VO 转换，使用 Hutool BeanUtil.copyProperties 自动复制同名字段。
+     *
+     * @param entity Question 数据库实体
+     * @return QuestionVO
+     */
     private QuestionVO toVO(Question entity) {
         QuestionVO vo = new QuestionVO();
         BeanUtil.copyProperties(entity, vo);

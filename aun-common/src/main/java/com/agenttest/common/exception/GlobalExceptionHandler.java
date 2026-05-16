@@ -26,7 +26,12 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    /** 业务异常 — 返回业务错误码和提示 */
+    /**
+     * 业务异常 — 返回业务错误码和提示。
+     *
+     * @param e 业务异常，取其 code 和 message
+     * @return Response（HTTP 200，业务错误码在 body.code 中）
+     */
     @ExceptionHandler(BusinessException.class)
     @ResponseStatus(HttpStatus.OK)
     public Response<Void> handleBusinessException(BusinessException e) {
@@ -34,7 +39,12 @@ public class GlobalExceptionHandler {
         return Response.error(e.getCode(), e.getMessage());
     }
 
-    /** 参数校验失败 — 拼接所有字段的校验错误信息 */
+    /**
+     * 参数校验失败 — 提取所有字段的 @Valid 校验错误，用分号拼接。
+     *
+     * @param e 校验异常，取其 BindingResult 中的 FieldError 列表
+     * @return code=400 的 Response，message 为拼接后的错误信息
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Response<Void> handleValidation(MethodArgumentNotValidException e) {
@@ -44,7 +54,13 @@ public class GlobalExceptionHandler {
         return Response.error(400, msg);
     }
 
-    /** 兜底异常 — 记录完整堆栈，返回通用错误，避免敏感信息泄露 */
+    /**
+     * 兜底异常 — 记录完整堆栈，返回通用错误，避免敏感信息泄露。
+     *
+     * @param e       未预期的异常
+     * @param request HTTP 请求对象，用于日志记录请求方法和 URI
+     * @return code=500, message="服务器内部错误" 的 Response
+     */
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Response<Void> handleException(Exception e, HttpServletRequest request) {

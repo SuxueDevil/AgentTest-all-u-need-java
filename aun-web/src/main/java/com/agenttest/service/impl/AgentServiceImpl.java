@@ -55,6 +55,9 @@ public class AgentServiceImpl implements AgentService {
      * 分页查询 Agent。
      * keyword 同时模糊匹配 name 和 description 字段；
      * type 和 status 为精确匹配，为空时不作为筛选条件。
+     *
+     * @param query 查询条件（keyword / type / status）及分页参数
+     * @return 分页结果，含 AgentVO 列表及 total / page / pageSize
      */
     @Override
     public PageResult<AgentVO> page(AgentQueryDTO query) {
@@ -85,13 +88,24 @@ public class AgentServiceImpl implements AgentService {
                 query.getPage(), query.getPageSize());
     }
 
-    /** 查询单个 Agent 详情，不存在抛 BusinessException(404) */
+    /**
+     * 查询单个 Agent 详情。
+     *
+     * @param id Agent 主键 ID
+     * @return AgentVO（不含 authCredential）
+     * @throws BusinessException 当 Agent 不存在时抛出，错误码 404
+     */
     @Override
     public AgentVO getById(Long id) {
         return toVO(getEntityById(id));
     }
 
-    /** 创建 Agent，默认状态设为 active，返回 VO */
+    /**
+     * 创建 Agent，默认状态设为 active。
+     *
+     * @param dto Agent 创建参数（name、type 必填）
+     * @return 创建后的 AgentVO，含数据库自动生成的主键
+     */
     @Override
     public AgentVO create(AgentCreateDTO dto) {
         Agent agent = new Agent();
@@ -101,7 +115,15 @@ public class AgentServiceImpl implements AgentService {
         return toVO(agent);
     }
 
-    /** 更新 Agent，使用 BeanUtil.copyProperties 将 DTO 非 null 字段复制到 entity */
+    /**
+     * 更新 Agent，使用 BeanUtil.copyProperties 将 DTO 非 null 字段复制到 entity。
+     * 未传入的字段不覆盖，authCredential 传空字符串时不更新。
+     *
+     * @param id  Agent 主键 ID
+     * @param dto 部分更新的字段
+     * @return 更新后的 AgentVO
+     * @throws BusinessException 当 Agent 不存在时抛出，错误码 404
+     */
     @Override
     public AgentVO update(Long id, AgentUpdateDTO dto) {
         Agent agent = getEntityById(id);
@@ -110,7 +132,12 @@ public class AgentServiceImpl implements AgentService {
         return toVO(agent);
     }
 
-    /** 删除 Agent，先校验存在再执行删除 */
+    /**
+     * 删除 Agent，先校验存在再执行物理删除。
+     *
+     * @param id Agent 主键 ID
+     * @throws BusinessException 当 Agent 不存在时抛出，错误码 404
+     */
     @Override
     public void delete(Long id) {
         getEntityById(id);           // 不存在会抛异常
@@ -122,6 +149,10 @@ public class AgentServiceImpl implements AgentService {
      * 向 agent.endpointUrl 发送 POST 请求，body 为一条简单的 ping 消息。
      * 根据 agent.authType 自动设置请求头鉴权。
      * 请求成功（2xx）返回 true，任何异常（超时、网络错误、非 2xx）返回 false。
+     *
+     * @param id Agent 主键 ID
+     * @return true 表示连通，false 表示不通（不抛异常）
+     * @throws BusinessException 当 Agent 未配置 endpointUrl 时抛出，错误码 400
      */
     @Override
     public boolean testConnection(Long id) {
@@ -156,6 +187,10 @@ public class AgentServiceImpl implements AgentService {
     /**
      * 按 ID 查询 Agent entity，不存在时抛出 BusinessException。
      * 私有方法，供内部逻辑使用（testConnection 等需要 entity 的 authCredential）。
+     *
+     * @param id Agent 主键 ID
+     * @return Agent 数据库实体（含 authCredential）
+     * @throws BusinessException 当 Agent 不存在时抛出，错误码 404
      */
     private Agent getEntityById(Long id) {
         Agent agent = agentMapper.selectById(id);
@@ -169,6 +204,9 @@ public class AgentServiceImpl implements AgentService {
      * entity → VO 转换。
      * 使用 Hutool BeanUtil.copyProperties 自动复制同名字段，
      * authCredential 因 VO 中无此字段而自动跳过，从而实现安全脱敏。
+     *
+     * @param entity Agent 数据库实体
+     * @return AgentVO（不含 authCredential）
      */
     private AgentVO toVO(Agent entity) {
         AgentVO vo = new AgentVO();
@@ -185,6 +223,9 @@ public class AgentServiceImpl implements AgentService {
      *   <li>custom  → 解析 authCredential JSON，逐个设为 Header</li>
      *   <li>none / 其他 → 不添加鉴权头</li>
      * </ul>
+     *
+     * @param headers HTTP 请求头（会被原地修改）
+     * @param agent   Agent 实体，取其 authType 和 authCredential
      */
     @SuppressWarnings("unchecked")
     private void applyAuth(HttpHeaders headers, Agent agent) {

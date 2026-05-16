@@ -42,39 +42,67 @@ public class QuestionController {
 
     /**
      * 分页查询问题列表。
-     * Query String: page, pageSize, keyword, category, difficulty, questionType
+     *
+     * @param query Query String 自动绑定: page, pageSize, keyword, category, difficulty, questionType
+     * @return 分页结果，data 内嵌 PageResult<QuestionVO>
      */
     @GetMapping
     public Response<PageResult<QuestionVO>> list(QuestionQueryDTO query) {
         return Response.success(questionService.page(query));
     }
 
-    /** 查询单个问题详情 */
+    /**
+     * 查询单个问题详情。
+     *
+     * @param id 问题主键 ID
+     * @return QuestionVO，id 不存在时返回 404 错误
+     */
     @GetMapping("/{id}")
     public Response<QuestionVO> detail(@PathVariable Long id) {
         return Response.success(questionService.getById(id));
     }
 
-    /** 创建问题 */
+    /**
+     * 创建问题。
+     *
+     * @param dto 问题创建参数（title、category 必填），校验失败返回 400
+     * @return 创建后的 QuestionVO
+     */
     @PostMapping
     public Response<QuestionVO> create(@Valid @RequestBody QuestionCreateDTO dto) {
         return Response.success(questionService.create(dto));
     }
 
-    /** 更新问题 */
+    /**
+     * 更新问题，支持部分字段更新。
+     *
+     * @param id  问题主键 ID
+     * @param dto 部分更新的字段
+     * @return 更新后的 QuestionVO
+     */
     @PutMapping("/{id}")
     public Response<QuestionVO> update(@PathVariable Long id, @RequestBody QuestionUpdateDTO dto) {
         return Response.success(questionService.update(id, dto));
     }
 
-    /** 删除单个问题 */
+    /**
+     * 删除单个问题。
+     *
+     * @param id 问题主键 ID
+     * @return 空 data，删除成功
+     */
     @DeleteMapping("/{id}")
     public Response<Void> delete(@PathVariable Long id) {
         questionService.delete(id);
         return Response.success();
     }
 
-    /** 批量删除问题，请求体为 ID 数组 [1, 2, 3] */
+    /**
+     * 批量删除问题。
+     *
+     * @param ids 问题主键 ID 列表，请求体示例: [1, 2, 3]
+     * @return 实际删除的条数
+     */
     @DeleteMapping("/batch")
     public Response<Integer> batchDelete(@RequestBody List<Long> ids) {
         return Response.success(questionService.batchDelete(ids));
@@ -84,7 +112,10 @@ public class QuestionController {
 
     /**
      * 批量导入问题。
-     * 接受 CSV 或 JSON 文件上传，返回导入统计结果。
+     *
+     * @param file 上传文件，支持 CSV 或 JSON 格式
+     * @return 导入统计: { successCount, failCount, errors: [{row, message}] }
+     * @throws IOException 文件读取失败时抛出
      */
     @PostMapping("/import")
     public Response<Map<String, Object>> importQuestions(@RequestParam("file") MultipartFile file) throws IOException {
@@ -94,8 +125,10 @@ public class QuestionController {
     }
 
     /**
-     * 导出问题为 CSV 或 JSON 文件。
-     * Query String: format=csv 或 format=json，默认 json。
+     * 导出问题为文件下载。
+     *
+     * @param format 导出格式（csv / json），默认 json，通过 Query String 指定
+     * @return 文件字节流，Content-Disposition 设为 attachment，浏览器自动下载
      */
     @GetMapping("/export")
     public ResponseEntity<byte[]> exportQuestions(@RequestParam(defaultValue = "json") String format) {
