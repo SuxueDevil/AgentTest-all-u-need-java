@@ -1,6 +1,5 @@
 package com.agenttest.engine;
 
-import cn.hutool.core.bean.BeanUtil;
 import com.agenttest.pojo.entity.Agent;
 import com.agenttest.pojo.entity.Question;
 import com.agenttest.pojo.entity.Question.Turn;
@@ -8,16 +7,20 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
  * Agent HTTP 客户端 — 向被测 Agent 发送评测请求并解析响应。
  * <p>
- * 根据 Agent 的 authType 自动附加鉴权头，支持 bearer / api_key / basic / custom。
- * 单轮问题组装为单条 user message；多轮问题将 turns 逐条加入 messages 数组。
+ * 自动识别响应类型：SSE 流式（data: 开头）或普通 JSON（{ 开头）。
+ * 支持通过 Agent 配置自定义请求模板（{{messages}} 占位符）和响应提取路径。
+ * 鉴权支持 bearer / api_key / basic / custom 四种方式。
  */
 @Component
 public class AgentHttpClient {
@@ -34,70 +37,119 @@ public class AgentHttpClient {
     }
 
     /**
-     * 向指定 Agent 发送评测请求。
+     * 向指定 Agent 发送评测请求。自动识别 SSE 流式或普通 JSON 响应。
      *
-     * @param agent    被测 Agent 实体（含 endpointUrl + authType + authCredential）
-     * @param question 题目实体（单轮取 title，多轮取 turns）
+     * @param agent    被测 Agent 实体
+     * @param question 题目实体
      * @return 响应结果: { content, tokensUsed, latencyMs, rawRequest, rawResponse }
      */
+    @SuppressWarnings("unchecked")
     public AgentResponse send(Agent agent, Question question) {
         long start = System.currentTimeMillis();
 
-        // 1. 组装 messages 数组
+        // 1. 组装 messages 并构造请求体
         List<Map<String, String>> messages = buildMessages(question);
+        String bodyStr = buildRequestBody(agent, messages);
 
-        // 2. 构造请求体
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("messages", messages);
-        body.put("max_tokens", 1024);
-
-        String rawRequest;
-        try {
-            rawRequest = objectMapper.writeValueAsString(body);
-        } catch (Exception e) {
-            rawRequest = body.toString();
-        }
-
-        // 3. 设置请求头 + 鉴权
+        // 2. 设置请求头 + 鉴权
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         applyAuth(headers, agent);
 
-        // 4. 发送请求
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-        ResponseEntity<String> response = restTemplate.exchange(
-                agent.getEndpointUrl(), HttpMethod.POST, request, String.class);
+        // 3. 发送请求并流式读取响应
+        HttpEntity<String> request = new HttpEntity<>(bodyStr, headers);
+        try {
+            return restTemplate.execute(agent.getEndpointUrl(), HttpMethod.POST,
+                    req -> {
+                        req.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+                        applyAuth(req.getHeaders(), agent);
+                        req.getBody().write(bodyStr.getBytes(StandardCharsets.UTF_8));
+                    },
+                    res -> parseResponse(res, agent, bodyStr, start));
+        } catch (Exception e) {
+            int latencyMs = (int) (System.currentTimeMillis() - start);
+            log.error("Agent调用失败: {} - {}", agent.getName(), e.getMessage());
+            return new AgentResponse("", 0, latencyMs, bodyStr, e.getMessage());
+        }
+    }
 
+    /** 解析响应 — 自动识别 SSE 或 JSON */
+    @SuppressWarnings("unchecked")
+    private AgentResponse parseResponse(ClientHttpResponse response, Agent agent,
+                                         String bodyStr, long start) throws IOException {
         int latencyMs = (int) (System.currentTimeMillis() - start);
-
-        // 5. 解析响应
+        StringBuilder rawResponse = new StringBuilder();
         String content = "";
         int tokensUsed = 0;
-        try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> respMap = objectMapper.readValue(response.getBody(), Map.class);
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> choices = (List<Map<String, Object>>) respMap.get("choices");
-            if (choices != null && !choices.isEmpty()) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-                if (message != null) {
-                    content = Objects.toString(message.get("content"), "");
+
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
+
+            boolean isSSE = response.getHeaders().getContentType() != null
+                    && response.getHeaders().getContentType().toString().contains("text/event-stream");
+            if (!isSSE) {
+                reader.mark(10);
+                String firstLine = reader.readLine();
+                reader.reset();
+                isSSE = firstLine != null && firstLine.startsWith("data:");
+            }
+
+            if (isSSE) {
+                // SSE 流式 — 逐行读取 data: 事件
+                StringBuilder contentBuf = new StringBuilder();
+                for (String line; (line = reader.readLine()) != null; ) {
+                    rawResponse.append(line).append("\n");
+                    if (line.startsWith("data: ") && !line.equals("data: [DONE]")) {
+                        String json = line.substring(6);
+                        try {
+                            Map<String, Object> chunk = objectMapper.readValue(json, Map.class);
+                            String delta = extractByPath(chunk, "choices[0].delta.content");
+                            if (delta != null) contentBuf.append(delta);
+                            // 最后一块可能带 usage
+                            Map<String, Object> usage = (Map<String, Object>) chunk.get("usage");
+                            if (usage != null) {
+                                tokensUsed = ((Number) usage.getOrDefault("total_tokens", 0)).intValue();
+                            }
+                        } catch (Exception ignored) { /* 跳过无法解析的块 */ }
+                    }
+                }
+                content = contentBuf.toString();
+            } else {
+                // 普通 JSON — 整段读取后按路径提取
+                StringBuilder jsonBuf = new StringBuilder();
+                for (String line; (line = reader.readLine()) != null; ) {
+                    rawResponse.append(line).append("\n");
+                    jsonBuf.append(line);
+                }
+                Map<String, Object> respMap = objectMapper.readValue(jsonBuf.toString(), Map.class);
+                String path = (agent.getResponseContentPath() != null
+                        && !agent.getResponseContentPath().isBlank())
+                        ? agent.getResponseContentPath()
+                        : "choices[0].message.content";
+                content = extractByPath(respMap, path);
+                Map<String, Object> usage = (Map<String, Object>) respMap.get("usage");
+                if (usage != null) {
+                    tokensUsed = ((Number) usage.getOrDefault("total_tokens", 0)).intValue();
                 }
             }
-            @SuppressWarnings("unchecked")
-            Map<String, Object> usage = (Map<String, Object>) respMap.get("usage");
-            if (usage != null) {
-                tokensUsed = ((Number) usage.getOrDefault("total_tokens", 0)).intValue();
-            }
-        } catch (Exception e) {
-            // 非标准响应，尝试直接使用原始文本
-            content = response.getBody();
-            log.warn("解析Agent响应失败: {}", e.getMessage());
         }
 
         log.info("Agent调用完成: agent={}, latency={}ms, tokens={}", agent.getName(), latencyMs, tokensUsed);
-        return new AgentResponse(content, tokensUsed, latencyMs, rawRequest, response.getBody());
+        return new AgentResponse(content, tokensUsed, latencyMs, bodyStr,
+                rawResponse.toString().trim());
+    }
+
+    /** 构造请求体 — 使用模板或默认 OpenAI 格式 */
+    private String buildRequestBody(Agent agent, List<Map<String, String>> messages) {
+        try {
+            String messagesJson = objectMapper.writeValueAsString(messages);
+            if (agent.getRequestBody() != null && !agent.getRequestBody().isBlank()) {
+                return agent.getRequestBody().replace("{{messages}}", messagesJson);
+            }
+            return "{\"messages\":" + messagesJson + ",\"max_tokens\":1024}";
+        } catch (Exception e) {
+            return "{\"messages\":[]}";
+        }
     }
 
     /** 组装 messages 数组 — 单轮取 title，多轮取 turns */
@@ -117,6 +169,29 @@ public class AgentHttpClient {
             messages.add(msg);
         }
         return messages;
+    }
+
+    /** 按路径从 JSON Map 中提取值。格式: choices[0].delta.content */
+    @SuppressWarnings("unchecked")
+    private String extractByPath(Map<String, Object> root, String path) {
+        Object current = root;
+        for (String seg : path.split("\\.")) {
+            if (current == null) return null;
+            int bracketIdx = seg.indexOf('[');
+            String key = bracketIdx > 0 ? seg.substring(0, bracketIdx) : seg;
+            if (current instanceof Map) {
+                current = ((Map<String, Object>) current).get(key);
+            }
+            if (bracketIdx > 0 && current instanceof List) {
+                try {
+                    String numStr = seg.substring(bracketIdx + 1, seg.length() - 1);
+                    current = ((List<?>) current).get(Integer.parseInt(numStr));
+                } catch (Exception e) {
+                    return null;
+                }
+            }
+        }
+        return current != null ? current.toString() : null;
     }
 
     /** 根据 Agent 的 authType 向 HTTP 请求头注入鉴权信息 */
@@ -139,9 +214,7 @@ public class AgentHttpClient {
         }
     }
 
-    /**
-     * Agent 响应封装 — 包含模型原文、token 消耗、延迟等完整信息。
-     */
+    /** Agent 响应封装 */
     public static class AgentResponse {
         public final String content;
         public final int tokensUsed;
