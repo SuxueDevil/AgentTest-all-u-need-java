@@ -27,6 +27,12 @@ public class AgentCreateDTO {
     /** 外部 Agent API 端点 URL */
     private String endpointUrl;
 
+    /** 请求模板 JSON，{{messages}} 占位符会被替换 */
+    private String requestBody;
+
+    /** 响应内容提取路径，如 choices[0].message.content */
+    private String responseContentPath;
+
     /** 鉴权方式: none / bearer / api_key / basic */
     private String authType;
 

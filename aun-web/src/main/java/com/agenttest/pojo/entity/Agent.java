@@ -39,6 +39,12 @@ public class Agent {
     /** 外部 Agent API 的完整 URL，如 https://api.openai.com/v1/chat/completions */
     private String endpointUrl;
 
+    /** 请求模板 JSON，{{messages}} 占位符会被替换为实际消息数组 */
+    private String requestBody;
+
+    /** 响应内容提取路径，如 choices[0].message.content，为空则取原始响应体 */
+    private String responseContentPath;
+
     /** 鉴权方式: none / bearer / api_key / basic */
     private String authType;
 

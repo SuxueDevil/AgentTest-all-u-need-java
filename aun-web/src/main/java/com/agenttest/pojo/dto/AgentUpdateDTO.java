@@ -19,6 +19,10 @@ public class AgentUpdateDTO {
     private String type;
     /** 外部 Agent API 端点 URL */
     private String endpointUrl;
+    /** 请求模板 JSON */
+    private String requestBody;
+    /** 响应内容提取路径 */
+    private String responseContentPath;
     /** 鉴权方式: none / bearer / api_key / basic */
     private String authType;
     /** 鉴权凭证（前端传空字符串表示不修改） */
