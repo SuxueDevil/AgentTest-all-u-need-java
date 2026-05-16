@@ -5,7 +5,8 @@ import com.agenttest.common.PageResult;
 import com.agenttest.common.exception.BusinessException;
 import com.agenttest.engine.AgentHttpClient;
 import com.agenttest.engine.AgentHttpClient.AgentResponse;
-import com.agenttest.pojo.JudgeVerdict;
+import com.agenttest.pojo.dto.JudgeRequest;
+import com.agenttest.pojo.vo.JudgeVerdict;
 import com.agenttest.service.JudgeService;
 import com.agenttest.mapper.AgentMapper;
 import com.agenttest.mapper.EvaluationResultMapper;
@@ -260,12 +261,13 @@ public class EvaluationServiceImpl implements EvaluationService {
                     Map<String, String> dimDesc = dimensions.stream().collect(
                             Collectors.toMap(DimensionConfig::getName,
                                     d -> d.getDisplayName() + "(权重" + d.getWeight() + ",阈值" + d.getThreshold() + ")"));
-                    JudgeVerdict verdict = judgeService.evaluate(
-                            question.getTitle(),
-                            question.getExpectedAnswer(),
-                            resp.content,
-                            agent.getDescription(),
-                            dimDesc);
+                    JudgeRequest judgeReq = new JudgeRequest();
+                    judgeReq.setQuestion(question.getTitle());
+                    judgeReq.setExpectedAnswer(question.getExpectedAnswer());
+                    judgeReq.setAgentResponse(resp.content);
+                    judgeReq.setCriteria(agent.getDescription());
+                    judgeReq.setDimensions(dimDesc);
+                    JudgeVerdict verdict = judgeService.evaluate(judgeReq);
 
                     // Judge 返回 → entity DimensionScore
                     List<DimensionScore> dimensionScores = verdict.dimensions().stream()

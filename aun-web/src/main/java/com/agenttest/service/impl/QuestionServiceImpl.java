@@ -400,10 +400,10 @@ public class QuestionServiceImpl implements QuestionService {
 
     @Override
     public List<QuestionVO> generate(String category, String difficulty,
-                                      String questionType, int count) {
+                                      String questionType, int count, String topic) {
         int safeCount = Math.min(count, 20);
         List<GeneratedQuestion> generated = questionGenerator.generate(
-                category, difficulty, questionType, safeCount);
+                category, difficulty, questionType, safeCount, topic);
 
         List<QuestionVO> result = new ArrayList<>();
         for (GeneratedQuestion gq : generated) {

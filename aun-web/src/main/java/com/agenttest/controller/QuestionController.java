@@ -154,6 +154,7 @@ public class QuestionController {
         String difficulty = (String) params.getOrDefault("difficulty", "medium");
         String questionType = (String) params.getOrDefault("questionType", "single");
         int count = Math.min((int) params.getOrDefault("count", 5), 20);
-        return Response.success(questionService.generate(category, difficulty, questionType, count));
+        String topic = (String) params.getOrDefault("topic", "");
+        return Response.success(questionService.generate(category, difficulty, questionType, count, topic));
     }
 }

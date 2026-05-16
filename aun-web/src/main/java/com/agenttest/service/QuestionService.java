@@ -60,5 +60,5 @@ public interface QuestionService {
      * @return 入库的题目列表
      */
     List<QuestionVO> generate(String category, String difficulty,
-                               String questionType, int count);
+                               String questionType, int count, String topic);
 }
