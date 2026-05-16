@@ -1,39 +1,60 @@
+# ============================================================
+# Agent 智能评测平台 — 应用配置
+# 敏感值通过环境变量注入，本地覆盖见 application-dev.yml
+# ============================================================
+
 server:
-  port: 8080
+  port: 8080                                           # 服务端口
 
 spring:
   profiles:
-    active: dev
+    active: dev                                        # 默认激活 dev 环境
+
+  # 数据源 — MySQL 8.0
   datasource:
     url: jdbc:mysql://${DB_HOST}:${DB_PORT}/agent_aun?createDatabaseIfNotExist=true
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${DB_USERNAME}                           # 数据库用户名
+    password: ${DB_PASSWORD}                           # 数据库密码
+    driver-class-name: com.mysql.cj.jdbc.Driver        # MySQL JDBC 驱动
 
+  # JSON 序列化 — 时区、日期格式
   jackson:
-    date-format: yyyy-MM-dd HH:mm:ss
-    time-zone: Asia/Shanghai
-    property-naming-strategy: LOWER_CAMEL_CASE
+    date-format: yyyy-MM-dd HH:mm:ss                   # 日期输出格式
+    time-zone: Asia/Shanghai                           # 东八区
+    property-naming-strategy: LOWER_CAMEL_CASE          # JSON key 驼峰命名
     serialization:
-      write-dates-as-timestamps: false
+      write-dates-as-timestamps: false                  # 日期不转时间戳
 
+  # 文件上传
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
+      max-file-size: 10MB                               # 单文件最大 10MB
+      max-request-size: 10MB                            # 单次请求最大 10MB
 
+  # LLM-as-Judge 配置 — DeepSeek（OpenAI 兼容），用于评测 Agent 回答质量
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}       # API Key，通过环境变量注入
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}  # API 地址
+      chat:
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-chat}          # 模型名称
+          temperature: 0.1                                # 低温度保证评判一致性
+
+# MyBatis-Plus 配置
 mybatis-plus:
   configuration:
-    map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+    map-underscore-to-camel-case: true                   # 数据库下划线 → Java 驼峰
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl  # SQL 日志走 Slf4j → Logback
   global-config:
     db-config:
-      id-type: auto
-      logic-delete-field: deleted
-      logic-delete-value: 1
-      logic-not-delete-value: 0
-  mapper-locations: classpath*:/mapper/**/*.xml
+      id-type: auto                                      # 主键自增
+      logic-delete-field: deleted                        # 逻辑删除字段
+      logic-delete-value: 1                              # 已删除值
+      logic-not-delete-value: 0                          # 未删除值
+  mapper-locations: classpath*:/mapper/**/*.xml          # Mapper XML 路径
 
+# 日志级别 — 详见 logback-spring.xml
 logging:
   level:
-    com.agenttest: debug
+    com.agenttest: debug                                 # 业务包 DEBUG 输出

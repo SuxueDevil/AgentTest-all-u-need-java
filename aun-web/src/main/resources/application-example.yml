@@ -5,3 +5,13 @@ spring:
     url: jdbc:mysql://<your-host>:3306/agent_aun?createDatabaseIfNotExist=true
     username: <your-username>
     password: <your-password>
+
+  # LLM-as-Judge 配置 — 用于评测打分
+  ai:
+    openai:
+      api-key: <your-deepseek-api-key>      # DeepSeek API Key
+      base-url: https://api.deepseek.com     # DeepSeek 地址（OpenAI 兼容）
+      chat:
+        options:
+          model: deepseek-chat               # 模型名
+          temperature: 0.1                   # 低温度保证评判一致性

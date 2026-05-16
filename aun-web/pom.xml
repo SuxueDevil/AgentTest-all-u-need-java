@@ -17,6 +17,10 @@
     <dependencies>
         <dependency>
             <groupId>com.agenttest</groupId>
+            <artifactId>aun-agent</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.agenttest</groupId>
             <artifactId>aun-framework</artifactId>
         </dependency>
         <dependency>

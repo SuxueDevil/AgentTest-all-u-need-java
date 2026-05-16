@@ -5,7 +5,8 @@ import com.agenttest.common.PageResult;
 import com.agenttest.common.exception.BusinessException;
 import com.agenttest.engine.AgentHttpClient;
 import com.agenttest.engine.AgentHttpClient.AgentResponse;
-import com.agenttest.engine.ScoringEngine;
+import com.agenttest.pojo.JudgeVerdict;
+import com.agenttest.service.JudgeService;
 import com.agenttest.mapper.AgentMapper;
 import com.agenttest.mapper.EvaluationResultMapper;
 import com.agenttest.mapper.EvaluationTaskMapper;
@@ -49,7 +50,7 @@ public class EvaluationServiceImpl implements EvaluationService {
     private final AgentMapper agentMapper;
     private final QuestionMapper questionMapper;
     private final AgentHttpClient httpClient;
-    private final ScoringEngine scoringEngine;
+    private final JudgeService judgeService;
 
     /** 构造器注入 */
     public EvaluationServiceImpl(EvaluationTaskMapper taskMapper,
@@ -57,13 +58,13 @@ public class EvaluationServiceImpl implements EvaluationService {
                                   AgentMapper agentMapper,
                                   QuestionMapper questionMapper,
                                   AgentHttpClient httpClient,
-                                  ScoringEngine scoringEngine) {
+                                  JudgeService judgeService) {
         this.taskMapper = taskMapper;
         this.resultMapper = resultMapper;
         this.agentMapper = agentMapper;
         this.questionMapper = questionMapper;
         this.httpClient = httpClient;
-        this.scoringEngine = scoringEngine;
+        this.judgeService = judgeService;
     }
 
     /** 运行中任务的取消标志位，key=taskId, value=true=取消 */
@@ -255,9 +256,27 @@ public class EvaluationServiceImpl implements EvaluationService {
                     AgentResponse resp = httpClient.send(agent, question);
 
                     // 评分
-                    List<DimensionScore> dimensionScores = scoringEngine.score(
-                            resp.content, question.getExpectedAnswer(), dimensions);
-                    double overall = scoringEngine.overallScore(dimensionScores, dimensions);
+                    // Judge LLM 评分
+                    Map<String, String> dimDesc = dimensions.stream().collect(
+                            Collectors.toMap(DimensionConfig::getName,
+                                    d -> d.getDisplayName() + "(权重" + d.getWeight() + ",阈值" + d.getThreshold() + ")"));
+                    JudgeVerdict verdict = judgeService.evaluate(
+                            question.getTitle(),
+                            question.getExpectedAnswer(),
+                            resp.content,
+                            agent.getDescription(),
+                            dimDesc);
+
+                    // Judge 返回 → entity DimensionScore
+                    List<DimensionScore> dimensionScores = verdict.dimensions().stream()
+                            .map(dv -> {
+                                DimensionScore ds = new DimensionScore();
+                                ds.setDimensionName(dv.name());
+                                ds.setScore(dv.score());
+                                ds.setFeedback(dv.feedback());
+                                return ds;
+                            }).collect(Collectors.toList());
+                    double overall = verdict.overall();
 
                     // 判断是否通过（取各维度阈值的平均值）
                     double avgThreshold = dimensions.stream()
