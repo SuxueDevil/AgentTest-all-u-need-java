@@ -29,6 +29,8 @@ public class AgentVO {
     private String endpointUrl;
     /** 请求模板 JSON */
     private String requestBody;
+    /** 响应协议: sse / json / auto */
+    private String responseProtocol;
     /** 响应内容提取路径 */
     private String responseContentPath;
     /** 鉴权方式（仅表示类型不含凭证值，authCredential 已在 VO 中排除） */

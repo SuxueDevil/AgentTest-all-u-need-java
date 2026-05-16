@@ -21,6 +21,9 @@ public class AgentUpdateDTO {
     private String endpointUrl;
     /** 请求模板 JSON */
     private String requestBody;
+    /** 响应协议: sse / json / auto */
+    private String responseProtocol;
+
     /** 响应内容提取路径 */
     private String responseContentPath;
     /** 鉴权方式: none / bearer / api_key / basic */

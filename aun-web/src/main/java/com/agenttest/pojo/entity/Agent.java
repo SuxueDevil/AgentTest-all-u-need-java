@@ -42,6 +42,9 @@ public class Agent {
     /** 请求模板 JSON，{{messages}} 占位符会被替换为实际消息数组 */
     private String requestBody;
 
+    /** 响应协议: sse=流式 / json=普通JSON / auto=自动识别 */
+    private String responseProtocol;
+
     /** 响应内容提取路径，如 choices[0].message.content，为空则取原始响应体 */
     private String responseContentPath;
 
