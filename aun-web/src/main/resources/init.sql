@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS agent (
     status          VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态',
     endpoint_url    VARCHAR(500) COMMENT 'API端点',
     request_body    TEXT COMMENT '请求模板JSON，{{messages}}占位',
+    response_protocol VARCHAR(10) DEFAULT 'auto' COMMENT '响应协议: sse/json/auto',
     response_content_path VARCHAR(100) COMMENT '响应提取路径，如choices[0].message.content',
     auth_type       VARCHAR(20) DEFAULT 'none' COMMENT '鉴权方式: none/bearer/api_key/basic/custom',
     auth_credential VARCHAR(1000) COMMENT '鉴权凭证',
