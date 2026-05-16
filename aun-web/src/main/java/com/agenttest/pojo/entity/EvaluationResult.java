@@ -56,7 +56,10 @@ public class EvaluationResult {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Object rawRequest;
 
-    /** Agent 原始响应文本 */
+    /** Agent 回答内容（从 SSE 流拼接或 JSON 提取后的纯文本） */
+    private String agentResponse;
+
+    /** Agent 原始响应文本（SSE dump 或 JSON 原文，截断存储） */
     private String rawResponse;
 
     /** 创建时间，数据库自动填充 */

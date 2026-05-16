@@ -31,6 +31,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -203,8 +204,8 @@ public class EvaluationServiceImpl implements EvaluationService {
     @Override
     public List<AgentResultVO> getResults(Long id) {
         EvaluationTask task = getTaskEntity(id);
-        if (!"completed".equals(task.getStatus()) && !"cancelled".equals(task.getStatus())) {
-            throw new BusinessException(400, "任务尚未完成，无法查看结果");
+        if ("pending".equals(task.getStatus())) {
+            throw new BusinessException(400, "任务尚未启动");
         }
 
         // 查询当前批次的单题结果
@@ -220,9 +221,9 @@ public class EvaluationServiceImpl implements EvaluationService {
     // ==================== 异步执行 ====================
 
     /**
-     * 异步执行评测 — 遍历 agentIds × questionIds 逐个调用 Agent 并评分。
-     * 使用 @Async 确保不阻塞 HTTP 请求线程。
-     * 每完成一条结果即更新 completedCount，取消标志位为 true 时中断。
+     * 异步执行评测 — 并行遍历 agentIds × questionIds，调用 Agent 并 Judge 评分。
+     * 使用 CompletableFuture 并行执行，线程池大小为 4，同时跑 4 组 Agent×题目。
+     * 取消标志位为 true 时跳过未开始的任务。
      */
     @Async("evaluationExecutor")
     public void executeAsync(Long taskId) {
@@ -233,88 +234,88 @@ public class EvaluationServiceImpl implements EvaluationService {
         List<Long> agentIds = task.getAgentIds();
         List<DimensionConfig> dimensions = task.getDimensions();
 
+        // 预加载 Agent 和 Question，避免并行时重复查库
+        Map<Long, Agent> agentMap = new HashMap<>();
+        Map<Long, Question> questionMap = new HashMap<>();
+        for (Long aid : agentIds) agentMap.put(aid, agentMapper.selectById(aid));
+        for (Long qid : questionIds) questionMap.put(qid, questionMapper.selectById(qid));
+
+        // 构建维度说明 Map
+        Map<String, String> dimDesc = dimensions.stream().collect(
+                Collectors.toMap(DimensionConfig::getName,
+                        d -> d.getDisplayName() + "(权重" + d.getWeight() + ",阈值" + d.getThreshold() + ")"));
+
+        // 并行执行所有 Agent×Question 对
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
         for (Long agentId : agentIds) {
-            // 检查取消标志
-            if (Boolean.TRUE.equals(cancelFlags.get(taskId))) break;
-
-            Agent agent = agentMapper.selectById(agentId);
-            if (agent == null || agent.getEndpointUrl() == null) {
-                log.warn("Agent {} 不存在或未配置 endpoint，跳过", agentId);
-                continue;
-            }
-
             for (Long questionId : questionIds) {
                 if (Boolean.TRUE.equals(cancelFlags.get(taskId))) break;
+                Agent agent = agentMap.get(agentId);
+                Question question = questionMap.get(questionId);
+                if (agent == null || question == null
+                        || agent.getEndpointUrl() == null) continue;
 
-                Question question = questionMapper.selectById(questionId);
-                if (question == null) {
-                    log.warn("题目 {} 不存在，跳过", questionId);
-                    continue;
-                }
+                futures.add(CompletableFuture.runAsync(() -> {
+                    if (Boolean.TRUE.equals(cancelFlags.get(taskId))) return;
+                    try {
+                        AgentResponse resp = httpClient.send(agent, question);
 
-                try {
-                    // 调用 Agent
-                    AgentResponse resp = httpClient.send(agent, question);
+                        JudgeRequest judgeReq = new JudgeRequest();
+                        judgeReq.setQuestion(question.getTitle());
+                        judgeReq.setExpectedAnswer(question.getExpectedAnswer());
+                        judgeReq.setAgentResponse(resp.content);
+                        judgeReq.setCriteria(agent.getDescription());
+                        judgeReq.setDimensions(dimDesc);
+                        JudgeVerdict verdict = judgeService.evaluate(judgeReq);
 
-                    // 评分
-                    // Judge LLM 评分
-                    Map<String, String> dimDesc = dimensions.stream().collect(
-                            Collectors.toMap(DimensionConfig::getName,
-                                    d -> d.getDisplayName() + "(权重" + d.getWeight() + ",阈值" + d.getThreshold() + ")"));
-                    JudgeRequest judgeReq = new JudgeRequest();
-                    judgeReq.setQuestion(question.getTitle());
-                    judgeReq.setExpectedAnswer(question.getExpectedAnswer());
-                    judgeReq.setAgentResponse(resp.content);
-                    judgeReq.setCriteria(agent.getDescription());
-                    judgeReq.setDimensions(dimDesc);
-                    JudgeVerdict verdict = judgeService.evaluate(judgeReq);
+                        List<DimensionScore> dimensionScores = verdict.dimensions().stream()
+                                .map(dv -> {
+                                    DimensionScore ds = new DimensionScore();
+                                    ds.setDimensionName(dv.name());
+                                    ds.setScore(dv.score());
+                                    ds.setFeedback(dv.feedback());
+                                    return ds;
+                                }).collect(Collectors.toList());
+                        double overall = verdict.overall();
 
-                    // Judge 返回 → entity DimensionScore
-                    List<DimensionScore> dimensionScores = verdict.dimensions().stream()
-                            .map(dv -> {
-                                DimensionScore ds = new DimensionScore();
-                                ds.setDimensionName(dv.name());
-                                ds.setScore(dv.score());
-                                ds.setFeedback(dv.feedback());
-                                return ds;
-                            }).collect(Collectors.toList());
-                    double overall = verdict.overall();
+                        double avgThreshold = dimensions.stream()
+                                .mapToDouble(DimensionConfig::getThreshold)
+                                .average().orElse(0.5);
+                        boolean passed = overall >= avgThreshold;
 
-                    // 判断是否通过（取各维度阈值的平均值）
-                    double avgThreshold = dimensions.stream()
-                            .mapToDouble(DimensionConfig::getThreshold)
-                            .average().orElse(0.5);
-                    boolean passed = overall >= avgThreshold;
+                        EvaluationResult result = new EvaluationResult();
+                        result.setTaskId(taskId);
+                        result.setAgentId(agentId);
+                        result.setQuestionId(questionId);
+                        result.setOverallScore(overall);
+                        result.setRun(task.getRun());
+                        result.setPassed(passed);
+                        result.setLatencyMs(resp.latencyMs);
+                        result.setTokensUsed(resp.tokensUsed);
+                        result.setDimensionScores(dimensionScores);
+                        result.setRawRequest(resp.rawRequest);
+                        result.setAgentResponse(resp.content);
+                        result.setRawResponse(resp.rawResponse);
+                        resultMapper.insert(result);
 
-                    // 保存结果
-                    EvaluationResult result = new EvaluationResult();
-                    result.setTaskId(taskId);
-                    result.setAgentId(agentId);
-                    result.setQuestionId(questionId);
-                    result.setOverallScore(overall);
-                    result.setRun(task.getRun());
-                    result.setPassed(passed);
-                    result.setLatencyMs(resp.latencyMs);
-                    result.setTokensUsed(resp.tokensUsed);
-                    result.setDimensionScores(dimensionScores);
-                    result.setRawRequest(resp.rawRequest);
-                    result.setRawResponse(resp.rawResponse);
-                    resultMapper.insert(result);
-
-                    // 更新进度
-                    task.setCompletedCount((task.getCompletedCount() == null ? 0
-                            : task.getCompletedCount()) + 1);
-                    taskMapper.updateById(task);
-
-                    log.info("评测完成: task={} agent={} question={} score={}", taskId, agentId, questionId, overall);
-                } catch (Exception e) {
-                    log.error("评测失败: task={} agent={} question={} error={}", taskId, agentId, questionId, e.getMessage());
-                    // 继续下一条，不因单条失败中断整个任务
-                }
+                        // 线程安全更新进度
+                        EvaluationTask latest = taskMapper.selectById(taskId);
+                        if (latest != null) {
+                            latest.setCompletedCount((latest.getCompletedCount() == null
+                                    ? 0 : latest.getCompletedCount()) + 1);
+                            taskMapper.updateById(latest);
+                        }
+                        log.info("评测完成: task={} agent={} question={} score={}", taskId, agentId, questionId, overall);
+                    } catch (Exception e) {
+                        log.error("评测失败: task={} agent={} question={} error={}", taskId, agentId, questionId, e.getMessage());
+                    }
+                }));
             }
         }
 
-        // 全部完成后更新状态
+        // 等待全部完成
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
         cancelFlags.remove(taskId);
         EvaluationTask latest = taskMapper.selectById(taskId);
         if (latest != null && "running".equals(latest.getStatus())) {
@@ -410,6 +411,11 @@ public class EvaluationServiceImpl implements EvaluationService {
         item.setPassed(r.getPassed());
         item.setLatencyMs(r.getLatencyMs());
         item.setTokensUsed(r.getTokensUsed());
+        // Agent 原文（截断前500字展示）
+        String raw = r.getRawResponse();
+        String agentResp = r.getAgentResponse();
+        item.setRawResponse(agentResp != null && agentResp.length() > 500
+                ? agentResp.substring(0, 500) + "…" : agentResp);
         item.setDimensionScores(r.getDimensionScores().stream().map(ds -> {
             AgentResultVO.DimensionScoreVO dsv = new AgentResultVO.DimensionScoreVO();
             dsv.setDimensionName(ds.getDimensionName());

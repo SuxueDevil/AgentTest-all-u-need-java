@@ -53,7 +53,9 @@ public class AgentResultVO {
         private Integer latencyMs;
         /** 消耗 token 数 */
         private Integer tokensUsed;
-        /** 该题各维度得分明细 */
+        /** Agent 原始回答 */
+        private String rawResponse;
+        /** 该题各维度得分明细（含 Judge 反馈理由） */
         private List<DimensionScoreVO> dimensionScores;
     }
 }
