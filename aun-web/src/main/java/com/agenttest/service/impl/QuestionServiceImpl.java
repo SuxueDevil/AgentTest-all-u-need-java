@@ -92,6 +92,7 @@ public class QuestionServiceImpl implements QuestionService {
                 .map(this::toVO)
                 .collect(Collectors.toList());
 
+        log.info("分页查询问题完成，共 {} 条", page.getTotal());
         return new PageResult<>(voList, page.getTotal(), query.getPage(), query.getPageSize());
     }
 
@@ -104,6 +105,7 @@ public class QuestionServiceImpl implements QuestionService {
      */
     @Override
     public QuestionVO getById(Long id) {
+        log.info("查询问题详情，id={}", id);
         return toVO(getEntityById(id));
     }
 
@@ -115,6 +117,7 @@ public class QuestionServiceImpl implements QuestionService {
      */
     @Override
     public QuestionVO create(QuestionCreateDTO dto) {
+        log.info("创建问题，title={} category={}", dto.getTitle(), dto.getCategory());
         Question question = new Question();
         BeanUtil.copyProperties(dto, question);
         // 默认值
@@ -138,6 +141,7 @@ public class QuestionServiceImpl implements QuestionService {
      */
     @Override
     public QuestionVO update(Long id, QuestionUpdateDTO dto) {
+        log.info("更新问题，id={}", id);
         Question question = getEntityById(id);
         BeanUtil.copyProperties(dto, question);
         questionMapper.updateById(question);
@@ -152,6 +156,7 @@ public class QuestionServiceImpl implements QuestionService {
      */
     @Override
     public void delete(Long id) {
+        log.info("删除问题，id={}", id);
         getEntityById(id);
         questionMapper.deleteById(id);
     }
@@ -168,6 +173,7 @@ public class QuestionServiceImpl implements QuestionService {
         if (ids == null || ids.isEmpty()) {
             throw new BusinessException(400, "请选择要删除的问题");
         }
+        log.info("批量删除问题，共 {} 条", ids.size());
         return questionMapper.deleteBatchIds(ids);
     }
 

@@ -84,6 +84,7 @@ public class AgentServiceImpl implements AgentService {
                 .map(this::toVO)
                 .collect(Collectors.toList());
 
+        log.info("分页查询 Agent 完成，共 {} 条", page.getTotal());
         return new PageResult<>(voList, page.getTotal(),
                 query.getPage(), query.getPageSize());
     }
@@ -97,6 +98,7 @@ public class AgentServiceImpl implements AgentService {
      */
     @Override
     public AgentVO getById(Long id) {
+        log.info("查询 Agent 详情，id={}", id);
         return toVO(getEntityById(id));
     }
 
@@ -108,6 +110,7 @@ public class AgentServiceImpl implements AgentService {
      */
     @Override
     public AgentVO create(AgentCreateDTO dto) {
+        log.info("创建 Agent，name={} type={}", dto.getName(), dto.getType());
         Agent agent = new Agent();
         BeanUtil.copyProperties(dto, agent);
         agent.setStatus("active");
@@ -126,6 +129,7 @@ public class AgentServiceImpl implements AgentService {
      */
     @Override
     public AgentVO update(Long id, AgentUpdateDTO dto) {
+        log.info("更新 Agent，id={}", id);
         Agent agent = getEntityById(id);
         BeanUtil.copyProperties(dto, agent);
         agentMapper.updateById(agent);
@@ -140,6 +144,7 @@ public class AgentServiceImpl implements AgentService {
      */
     @Override
     public void delete(Long id) {
+        log.info("删除 Agent，id={}", id);
         getEntityById(id);           // 不存在会抛异常
         agentMapper.deleteById(id);
     }
