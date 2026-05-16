@@ -98,7 +98,7 @@ public class AgentHttpClient {
                 // SSE 流式 — 逐行读取 data: 事件
                 StringBuilder contentBuf = new StringBuilder();
                 for (String line; (line = reader.readLine()) != null; ) {
-                    rawResponse.append(line).append("\n");
+                    if (rawResponse.length() < 2000) rawResponse.append(line).append("\n");
                     if (line.startsWith("data: ") && !line.equals("data: [DONE]")) {
                         String json = line.substring(6);
                         try {

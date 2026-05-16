@@ -16,6 +16,9 @@ spring:
     username: ${DB_USERNAME}                           # 数据库用户名
     password: ${DB_PASSWORD}                           # 数据库密码
     driver-class-name: com.mysql.cj.jdbc.Driver        # MySQL JDBC 驱动
+    hikari:
+      max-lifetime: 180000                             # 连接最大存活 3 分钟，短于 MySQL wait_timeout
+      keepalive-time: 60000                            # 每分钟心跳保活，防止被服务端断开
 
   # JSON 序列化 — 时区、日期格式
   jackson:
