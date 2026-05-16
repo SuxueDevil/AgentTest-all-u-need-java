@@ -3,6 +3,7 @@ package com.agenttest.pojo.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.Data;
 
 import java.time.LocalDateTime;
 
@@ -12,6 +13,7 @@ import java.time.LocalDateTime;
  * {@link TableName} 指定表名和自动结果映射（JacksonTypeHandler 需要 autoResultMap=true）。
  * 字段名采用驼峰，MyBatis-Plus 自动映射到下划线格式的数据库列。
  */
+@Data
 @TableName("agent")
 public class Agent {
 
@@ -46,35 +48,9 @@ public class Agent {
      */
     private String authCredential;
 
-
     /** 创建时间，数据库自动填充 */
     private LocalDateTime createdAt;
 
     /** 更新时间，数据库自动更新 */
     private LocalDateTime updatedAt;
-
-    // ==================== getters / setters ====================
-
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-    public String getModel() { return model; }
-    public void setModel(String model) { this.model = model; }
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
-    public String getEndpointUrl() { return endpointUrl; }
-    public void setEndpointUrl(String endpointUrl) { this.endpointUrl = endpointUrl; }
-    public String getAuthType() { return authType; }
-    public void setAuthType(String authType) { this.authType = authType; }
-    public String getAuthCredential() { return authCredential; }
-    public void setAuthCredential(String authCredential) { this.authCredential = authCredential; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

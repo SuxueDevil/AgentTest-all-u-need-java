@@ -1,37 +1,26 @@
 package com.agenttest.pojo.dto;
 
+import lombok.Data;
 
 /**
  * Agent 更新请求 — 所有字段可选，前端传哪些就更新哪些。
  * 与 CreateDTO 的区别是不做 @NotBlank 校验，允许部分更新。
  */
+@Data
 public class AgentUpdateDTO {
 
+    /** Agent 名称 */
     private String name;
+    /** 描述信息 */
     private String description;
+    /** 底层模型标识，如 gpt-4o */
     private String model;
+    /** Agent 类型: llm / multi-modal / tool-use / code-gen / rag */
     private String type;
-    /** API 端点 URL */
+    /** 外部 Agent API 端点 URL */
     private String endpointUrl;
-    /** 鉴权方式 */
+    /** 鉴权方式: none / bearer / api_key / basic */
     private String authType;
     /** 鉴权凭证（前端传空字符串表示不修改） */
     private String authCredential;
-
-    // ==================== getters / setters ====================
-
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-    public String getModel() { return model; }
-    public void setModel(String model) { this.model = model; }
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
-    public String getEndpointUrl() { return endpointUrl; }
-    public void setEndpointUrl(String endpointUrl) { this.endpointUrl = endpointUrl; }
-    public String getAuthType() { return authType; }
-    public void setAuthType(String authType) { this.authType = authType; }
-    public String getAuthCredential() { return authCredential; }
-    public void setAuthCredential(String authCredential) { this.authCredential = authCredential; }
 }

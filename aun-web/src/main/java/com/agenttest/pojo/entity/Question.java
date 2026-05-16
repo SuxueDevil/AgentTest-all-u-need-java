@@ -5,8 +5,8 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
-
 import com.fasterxml.jackson.annotation.JsonAlias;
+import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -17,6 +17,7 @@ import java.util.List;
  * turns 为多轮对话 JSON 数组: [{turnOrder, role, content}]，
  * tags 为 JSON 字符串数组，两个字段均使用 JacksonTypeHandler 自动序列化/反序列化。
  */
+@Data
 @TableName(value = "question", autoResultMap = true)
 public class Question {
 
@@ -56,34 +57,12 @@ public class Question {
     /** 更新时间，数据库自动更新 */
     private LocalDateTime updatedAt;
 
-    // ==================== getters / setters ====================
-
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public String getTitle() { return title; }
-    public void setTitle(String title) { this.title = title; }
-    public String getCategory() { return category; }
-    public void setCategory(String category) { this.category = category; }
-    public String getDifficulty() { return difficulty; }
-    public void setDifficulty(String difficulty) { this.difficulty = difficulty; }
-    public String getQuestionType() { return questionType; }
-    public void setQuestionType(String questionType) { this.questionType = questionType; }
-    public List<Turn> getTurns() { return turns; }
-    public void setTurns(List<Turn> turns) { this.turns = turns; }
-    public String getExpectedAnswer() { return expectedAnswer; }
-    public void setExpectedAnswer(String expectedAnswer) { this.expectedAnswer = expectedAnswer; }
-    public List<String> getTags() { return tags; }
-    public void setTags(List<String> tags) { this.tags = tags; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
-
     /**
      * 多轮对话中的单轮 — JSON 序列化的内嵌对象。
      * <p>
      * turnOrder: 轮次序号（1-based）；role: user / assistant；content: 消息文本。
      */
+    @Data
     public static class Turn {
         /** 轮次序号，从 1 开始（兼容 snake_case: turn_order） */
         @JsonAlias("turn_order")
@@ -92,12 +71,5 @@ public class Question {
         private String role;
         /** 消息内容 */
         private String content;
-
-        public Integer getTurnOrder() { return turnOrder; }
-        public void setTurnOrder(Integer turnOrder) { this.turnOrder = turnOrder; }
-        public String getRole() { return role; }
-        public void setRole(String role) { this.role = role; }
-        public String getContent() { return content; }
-        public void setContent(String content) { this.content = content; }
     }
 }

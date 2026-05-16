@@ -1,5 +1,7 @@
 package com.agenttest.pojo.vo;
 
+import lombok.Data;
+
 import java.time.LocalDateTime;
 
 /**
@@ -8,41 +10,27 @@ import java.time.LocalDateTime;
  * 与 entity 的关键区别: <b>不含 authCredential 字段</b>，防止敏感凭证泄露到前端。
  * 其他字段与 entity 一致，由 Service 层通过 BeanUtil.copyProperties 从 entity 转换。
  */
+@Data
 public class AgentVO {
 
+    /** 主键 ID */
     private Long id;
+    /** Agent 名称 */
     private String name;
+    /** 描述信息 */
     private String description;
+    /** 底层模型标识，如 gpt-4o */
     private String model;
+    /** Agent 类型: llm / multi-modal / tool-use / code-gen / rag */
     private String type;
+    /** 状态: active=运行中 / inactive=已停用 / evaluating=评测中 / error=异常 */
     private String status;
-    /** Agent API 端点 URL */
+    /** 外部 Agent API 端点 URL */
     private String endpointUrl;
-    /** 鉴权方式（仅表示类型，不含凭证值） */
+    /** 鉴权方式（仅表示类型不含凭证值，authCredential 已在 VO 中排除） */
     private String authType;
+    /** 创建时间 */
     private LocalDateTime createdAt;
+    /** 更新时间 */
     private LocalDateTime updatedAt;
-
-    // ==================== getters / setters ====================
-
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-    public String getModel() { return model; }
-    public void setModel(String model) { this.model = model; }
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
-    public String getEndpointUrl() { return endpointUrl; }
-    public void setEndpointUrl(String endpointUrl) { this.endpointUrl = endpointUrl; }
-    public String getAuthType() { return authType; }
-    public void setAuthType(String authType) { this.authType = authType; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

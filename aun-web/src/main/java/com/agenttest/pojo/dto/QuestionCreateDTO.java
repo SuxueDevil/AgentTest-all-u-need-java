@@ -2,6 +2,8 @@ package com.agenttest.pojo.dto;
 
 import com.agenttest.pojo.entity.Question;
 import jakarta.validation.constraints.NotBlank;
+import lombok.Data;
+
 import java.util.List;
 
 /**
@@ -10,6 +12,7 @@ import java.util.List;
  * title 和 category 为必填，questionType 未传时默认 single。
  * 多轮问题时需传入 turns 数组，每项含 turnOrder / role / content。
  */
+@Data
 public class QuestionCreateDTO {
 
     /** 问题标题（必填） */
@@ -34,21 +37,4 @@ public class QuestionCreateDTO {
 
     /** 标签列表 */
     private List<String> tags;
-
-    // ==================== getters / setters ====================
-
-    public String getTitle() { return title; }
-    public void setTitle(String title) { this.title = title; }
-    public String getCategory() { return category; }
-    public void setCategory(String category) { this.category = category; }
-    public String getDifficulty() { return difficulty; }
-    public void setDifficulty(String difficulty) { this.difficulty = difficulty; }
-    public String getQuestionType() { return questionType; }
-    public void setQuestionType(String questionType) { this.questionType = questionType; }
-    public List<Question.Turn> getTurns() { return turns; }
-    public void setTurns(List<Question.Turn> turns) { this.turns = turns; }
-    public String getExpectedAnswer() { return expectedAnswer; }
-    public void setExpectedAnswer(String expectedAnswer) { this.expectedAnswer = expectedAnswer; }
-    public List<String> getTags() { return tags; }
-    public void setTags(List<String> tags) { this.tags = tags; }
 }

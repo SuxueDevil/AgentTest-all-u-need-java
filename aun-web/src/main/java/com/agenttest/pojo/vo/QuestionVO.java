@@ -1,6 +1,8 @@
 package com.agenttest.pojo.vo;
 
 import com.agenttest.pojo.entity.Question;
+import lombok.Data;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -10,41 +12,27 @@ import java.util.List;
  * 与 entity 字段基本一致（问题数据无敏感字段），
  * 由 Service 层通过 BeanUtil.copyProperties 从 entity 转换。
  */
+@Data
 public class QuestionVO {
 
+    /** 主键 ID */
     private Long id;
+    /** 问题标题 */
     private String title;
+    /** 分类: reasoning / coding / qa / translation / summarization */
     private String category;
+    /** 难度: easy / medium / hard */
     private String difficulty;
+    /** 问题类型: single（单轮）/ multi（多轮） */
     private String questionType;
-    /** 多轮对话内容 */
+    /** 多轮对话内容，单轮时为空或单元素数组 */
     private List<Question.Turn> turns;
-    /** 期望答案 */
+    /** 期望答案（评分参考） */
     private String expectedAnswer;
+    /** 标签列表 */
     private List<String> tags;
+    /** 创建时间 */
     private LocalDateTime createdAt;
+    /** 更新时间 */
     private LocalDateTime updatedAt;
-
-    // ==================== getters / setters ====================
-
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public String getTitle() { return title; }
-    public void setTitle(String title) { this.title = title; }
-    public String getCategory() { return category; }
-    public void setCategory(String category) { this.category = category; }
-    public String getDifficulty() { return difficulty; }
-    public void setDifficulty(String difficulty) { this.difficulty = difficulty; }
-    public String getQuestionType() { return questionType; }
-    public void setQuestionType(String questionType) { this.questionType = questionType; }
-    public List<Question.Turn> getTurns() { return turns; }
-    public void setTurns(List<Question.Turn> turns) { this.turns = turns; }
-    public String getExpectedAnswer() { return expectedAnswer; }
-    public void setExpectedAnswer(String expectedAnswer) { this.expectedAnswer = expectedAnswer; }
-    public List<String> getTags() { return tags; }
-    public void setTags(List<String> tags) { this.tags = tags; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

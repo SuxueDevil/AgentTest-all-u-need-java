@@ -1,5 +1,7 @@
 package com.agenttest.common;
 
+import lombok.Data;
+
 import java.util.List;
 
 /**
@@ -8,6 +10,7 @@ import java.util.List;
  *
  * @param <T> 列表元素类型
  */
+@Data
 public class PageResult<T> {
 
     /** 当前页数据列表 */
@@ -31,15 +34,4 @@ public class PageResult<T> {
         this.page = page;
         this.pageSize = pageSize;
     }
-
-    // ==================== getters / setters ====================
-
-    public List<T> getData() { return data; }
-    public void setData(List<T> data) { this.data = data; }
-    public long getTotal() { return total; }
-    public void setTotal(long total) { this.total = total; }
-    public int getPage() { return page; }
-    public void setPage(int page) { this.page = page; }
-    public int getPageSize() { return pageSize; }
-    public void setPageSize(int pageSize) { this.pageSize = pageSize; }
 }
