@@ -139,4 +139,21 @@ public class QuestionController {
                 .contentType(MediaType.parseMediaType(result.getContentType()))
                 .body(result.getBytes());
     }
+
+    // ==================== AI 生成 ====================
+
+    /**
+     * AI 生成题目 — 调用 LLM 按分类/难度/类型/数量批量生成并入库。
+     *
+     * @param params { category, difficulty, questionType, count }
+     * @return 入库的题目列表
+     */
+    @PostMapping("/generate")
+    public Response<List<QuestionVO>> generate(@RequestBody Map<String, Object> params) {
+        String category = (String) params.getOrDefault("category", "reasoning");
+        String difficulty = (String) params.getOrDefault("difficulty", "medium");
+        String questionType = (String) params.getOrDefault("questionType", "single");
+        int count = Math.min((int) params.getOrDefault("count", 5), 20);
+        return Response.success(questionService.generate(category, difficulty, questionType, count));
+    }
 }

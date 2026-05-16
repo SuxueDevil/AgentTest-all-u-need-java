@@ -49,4 +49,16 @@ public interface QuestionService {
      * @return 文件导出结果（bytes + filename + contentType）
      */
     FileExportResult exportQuestions(String format);
+
+    /**
+     * AI 生成题目 — 调用 LLM 按分类/难度/类型/数量批量生成并入库。
+     *
+     * @param category     分类: reasoning/coding/qa/translation/summarization
+     * @param difficulty   难度: easy/medium/hard
+     * @param questionType 类型: single / multi
+     * @param count        生成数量 1~20
+     * @return 入库的题目列表
+     */
+    List<QuestionVO> generate(String category, String difficulty,
+                               String questionType, int count);
 }

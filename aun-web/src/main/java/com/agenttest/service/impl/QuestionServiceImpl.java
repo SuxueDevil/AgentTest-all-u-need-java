@@ -16,6 +16,8 @@ import com.agenttest.pojo.dto.QuestionQueryDTO;
 import com.agenttest.pojo.dto.QuestionUpdateDTO;
 import com.agenttest.pojo.entity.Question;
 import com.agenttest.pojo.vo.QuestionVO;
+import com.agenttest.generator.QuestionGenerator;
+import com.agenttest.generator.QuestionGenerator.GeneratedQuestion;
 import com.agenttest.service.QuestionService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -50,11 +52,14 @@ public class QuestionServiceImpl implements QuestionService {
 
     private final QuestionMapper questionMapper;
     private final ObjectMapper objectMapper;
+    private final QuestionGenerator questionGenerator;
 
     /** 构造器注入 */
-    public QuestionServiceImpl(QuestionMapper questionMapper, ObjectMapper objectMapper) {
+    public QuestionServiceImpl(QuestionMapper questionMapper, ObjectMapper objectMapper,
+                                QuestionGenerator questionGenerator) {
         this.questionMapper = questionMapper;
         this.objectMapper = objectMapper;
+        this.questionGenerator = questionGenerator;
     }
 
     // ==================== CRUD ====================
@@ -389,5 +394,42 @@ public class QuestionServiceImpl implements QuestionService {
         QuestionVO vo = new QuestionVO();
         BeanUtil.copyProperties(entity, vo);
         return vo;
+    }
+
+    // ==================== AI 生成 ====================
+
+    @Override
+    public List<QuestionVO> generate(String category, String difficulty,
+                                      String questionType, int count) {
+        int safeCount = Math.min(count, 20);
+        List<GeneratedQuestion> generated = questionGenerator.generate(
+                category, difficulty, questionType, safeCount);
+
+        List<QuestionVO> result = new ArrayList<>();
+        for (GeneratedQuestion gq : generated) {
+            Question q = new Question();
+            q.setTitle(gq.title());
+            q.setCategory(category != null ? category : "reasoning");
+            q.setDifficulty(difficulty != null ? difficulty : "medium");
+            q.setQuestionType(questionType != null ? questionType : "single");
+            q.setExpectedAnswer(gq.expectedAnswer());
+            q.setTags(gq.tags());
+
+            // 多轮时转换 turns
+            if ("multi".equals(questionType) && gq.turns() != null) {
+                q.setTurns(gq.turns().stream().map(t -> {
+                    Question.Turn turn = new Question.Turn();
+                    turn.setTurnOrder(t.turnOrder());
+                    turn.setRole(t.role());
+                    turn.setContent(t.content());
+                    return turn;
+                }).collect(Collectors.toList()));
+            }
+
+            questionMapper.insert(q);
+            result.add(toVO(q));
+        }
+        log.info("AI生成题目完成: 生成{}道, 入库{}道", generated.size(), result.size());
+        return result;
     }
 }
