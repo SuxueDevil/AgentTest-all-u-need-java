@@ -36,8 +36,8 @@ public class QuestionGenerator {
      */
     @SuppressWarnings("unchecked")
     public List<GeneratedQuestion> generate(String category, String difficulty,
-                                             String questionType, int count) {
-        String prompt = buildPrompt(category, difficulty, questionType, count);
+                                             String questionType, int count, String topic) {
+        String prompt = buildPrompt(category, difficulty, questionType, count, topic);
         log.info("开始生成题目: category={} difficulty={} type={} count={}",
                 category, difficulty, questionType, count);
 
@@ -65,9 +65,18 @@ public class QuestionGenerator {
         }
     }
 
-    /** 构建生成 Prompt */
+    /**
+     * 构建生成 Prompt，包含分类中文名、难度、类型要求、可选主题场景。
+     *
+     * @param category     分类标识
+     * @param difficulty   难度标识
+     * @param questionType 题目类型: single / multi
+     * @param count        生成数量
+     * @param topic        主题场景（可为空），如"医疗问诊"
+     * @return 完整的 Prompt 文本
+     */
     private String buildPrompt(String category, String difficulty,
-                                String questionType, int count) {
+                                String questionType, int count, String topic) {
         String categoryName = switch (category != null ? category : "reasoning") {
             case "reasoning" -> "逻辑推理";
             case "coding" -> "编程";
@@ -88,13 +97,16 @@ public class QuestionGenerator {
                 ? "单轮对话（只有一个 user 问题，不需要 assistant 回复）"
                 : "多轮对话（包含 role=user 和 role=assistant 的交替 turns 数组）";
 
+        String topicLine = topic != null && !topic.isBlank()
+                ? "- 主题场景：%s\n".formatted(topic) : "";
+
         return """
                你是一个专业的 AI 评测题库生成器。请生成 %d 道%s类题目。
 
                要求：
                - 难度：%s
                - 类型：%s
-               - 每题包含 title（题目标题）、expectedAnswer（期望答案/评分参考）、tags（标签数组，2-3个）
+               %s- 每题包含 title（题目标题）、expectedAnswer（期望答案/评分参考）、tags（标签数组，2-3个）
 
                %s
 
@@ -105,6 +117,7 @@ public class QuestionGenerator {
                 categoryName,
                 difficultyName,
                 typeDesc,
+                topicLine,
                 "multi".equals(questionType)
                         ? "多轮题目的 turns 格式示例：\n  \"turns\":[{\"turnOrder\":1,\"role\":\"user\",\"content\":\"问题\"},{\"turnOrder\":2,\"role\":\"assistant\",\"content\":\"回答\"}]"
                         : ""

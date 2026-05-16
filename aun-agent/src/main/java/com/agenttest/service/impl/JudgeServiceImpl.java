@@ -1,6 +1,7 @@
 package com.agenttest.service.impl;
 
-import com.agenttest.pojo.JudgeVerdict;
+import com.agenttest.pojo.dto.JudgeRequest;
+import com.agenttest.pojo.vo.JudgeVerdict;
 import com.agenttest.service.JudgeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,12 +33,20 @@ public class JudgeServiceImpl implements JudgeService {
         this.outputConverter = new BeanOutputConverter<>(JudgeVerdict.class);
     }
 
+    /**
+     * 调用 Judge LLM 进行多维度评分。
+     * <p>
+     * 将 JudgeRequest 各字段拼入评分 Prompt，发给 ChatClient，
+     * 返回的 JSON 经 BeanOutputConverter 映射为 JudgeVerdict。
+     * 调用失败时返回 score=0 + error feedback，不抛异常阻断评测流程。
+     *
+     * @param request 评分请求（question / expectedAnswer / agentResponse / criteria / dimensions）
+     * @return JudgeVerdict 评分结果
+     */
     @Override
-    public JudgeVerdict evaluate(String question, String expectedAnswer,
-                                  String agentResponse, String criteria,
-                                  Map<String, String> dimensions) {
-        String prompt = buildPrompt(question, expectedAnswer, agentResponse,
-                criteria, dimensions);
+    public JudgeVerdict evaluate(JudgeRequest request) {
+        String prompt = buildPrompt(request.getQuestion(), request.getExpectedAnswer(),
+                request.getAgentResponse(), request.getCriteria(), request.getDimensions());
         try {
             String content = judgeClient.prompt()
                     .user(prompt)
@@ -53,13 +62,19 @@ public class JudgeServiceImpl implements JudgeService {
             return verdict;
         } catch (Exception e) {
             log.error("Judge评分失败: {}", e.getMessage());
-            return fallbackVerdict(dimensions, e.getMessage());
+            return fallbackVerdict(request.getDimensions(), e.getMessage());
         }
     }
 
     /**
-     * 构建评分 Prompt。
-     * 包含：Agent 角色定义、用户问题、期望答案、Agent 回答、评分维度、JSON 格式要求。
+     * 构建评分 Prompt，包含：Agent 角色定义、用户问题、期望答案、Agent 回答、评分维度、JSON Schema。
+     *
+     * @param question       用户问题文本
+     * @param expectedAnswer 期望答案（可为空）
+     * @param agentResponse  Agent 的实际回答
+     * @param criteria       Agent 角色定义与评估标准
+     * @param dimensions     评分维度 Map（name → 说明）
+     * @return 完整的评分 Prompt 字符串
      */
     private String buildPrompt(String question, String expectedAnswer,
                                 String agentResponse, String criteria,

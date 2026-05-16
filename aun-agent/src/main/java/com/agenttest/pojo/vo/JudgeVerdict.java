@@ -1,4 +1,4 @@
-package com.agenttest.pojo;
+package com.agenttest.pojo.vo;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
