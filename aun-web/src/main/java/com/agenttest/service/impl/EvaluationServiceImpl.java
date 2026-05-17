@@ -9,6 +9,7 @@ import com.agenttest.pojo.dto.JudgeRequest;
 import com.agenttest.pojo.vo.JudgeVerdict;
 import com.agenttest.service.JudgeService;
 import com.agenttest.mapper.AgentMapper;
+import com.agenttest.mapper.LLMMapper;
 import com.agenttest.mapper.EvaluationResultMapper;
 import com.agenttest.mapper.EvaluationTaskMapper;
 import com.agenttest.mapper.QuestionMapper;
@@ -50,6 +51,7 @@ public class EvaluationServiceImpl implements EvaluationService {
     private final EvaluationTaskMapper taskMapper;
     private final EvaluationResultMapper resultMapper;
     private final AgentMapper agentMapper;
+    private final LLMMapper llmMapper;
     private final QuestionMapper questionMapper;
     private final AgentHttpClient httpClient;
     private final JudgeService judgeService;
@@ -58,12 +60,14 @@ public class EvaluationServiceImpl implements EvaluationService {
     public EvaluationServiceImpl(EvaluationTaskMapper taskMapper,
                                   EvaluationResultMapper resultMapper,
                                   AgentMapper agentMapper,
+                                  LLMMapper llmMapper,
                                   QuestionMapper questionMapper,
                                   AgentHttpClient httpClient,
                                   JudgeService judgeService) {
         this.taskMapper = taskMapper;
         this.resultMapper = resultMapper;
         this.agentMapper = agentMapper;
+        this.llmMapper = llmMapper;
         this.questionMapper = questionMapper;
         this.httpClient = httpClient;
         this.judgeService = judgeService;
@@ -109,6 +113,7 @@ public class EvaluationServiceImpl implements EvaluationService {
         task.setDescription(dto.getDescription());
         task.setQuestionIds(dto.getQuestionIds());
         task.setAgentIds(dto.getAgentIds());
+        task.setLlmIds(dto.getLlmIds());
         task.setDimensions(dto.getDimensions());
         task.setQuestionCount(dto.getQuestionIds().size());
         task.setCompletedCount(0);
@@ -215,7 +220,7 @@ public class EvaluationServiceImpl implements EvaluationService {
         List<EvaluationResult> allResults = resultMapper.selectList(wrapper);
 
         log.info("获取评测结果，taskId={} 共 {} 条记录", id, allResults.size());
-        return aggregateByAgent(task, allResults);
+        return aggregateByTarget(task, allResults);
     }
 
     // ==================== 异步执行 ====================
@@ -234,10 +239,13 @@ public class EvaluationServiceImpl implements EvaluationService {
         List<Long> agentIds = task.getAgentIds();
         List<DimensionConfig> dimensions = task.getDimensions();
 
-        // 预加载 Agent 和 Question，避免并行时重复查库
+        // 预加载 Agent/LLM/Question，避免并行时重复查库
+        List<Long> llmIds = task.getLlmIds() != null ? task.getLlmIds() : List.of();
         Map<Long, Agent> agentMap = new HashMap<>();
+        Map<Long, LLM> llmMap = new HashMap<>();
         Map<Long, Question> questionMap = new HashMap<>();
         for (Long aid : agentIds) agentMap.put(aid, agentMapper.selectById(aid));
+        for (Long lid : llmIds) llmMap.put(lid, llmMapper.selectById(lid));
         for (Long qid : questionIds) questionMap.put(qid, questionMapper.selectById(qid));
 
         // 构建维度说明 Map
@@ -313,6 +321,72 @@ public class EvaluationServiceImpl implements EvaluationService {
             }
         }
 
+        // LLM × Question 并行执行
+        for (Long llmId : llmIds) {
+            LLM llm = llmMap.get(llmId);
+            if (llm == null || llm.getEndpointUrl() == null) continue;
+            for (Long questionId : questionIds) {
+                if (Boolean.TRUE.equals(cancelFlags.get(taskId))) break;
+                Question question = questionMap.get(questionId);
+                if (question == null) continue;
+
+                futures.add(CompletableFuture.runAsync(() -> {
+                    if (Boolean.TRUE.equals(cancelFlags.get(taskId))) return;
+                    try {
+                        AgentResponse resp = httpClient.sendToLLM(llm, question);
+
+                        JudgeRequest judgeReq = new JudgeRequest();
+                        judgeReq.setQuestion(question.getTitle());
+                        judgeReq.setExpectedAnswer(question.getExpectedAnswer());
+                        judgeReq.setAgentResponse(resp.content);
+                        judgeReq.setCriteria("LLM模型 " + llm.getName());
+                        judgeReq.setDimensions(dimDesc);
+                        JudgeVerdict verdict = judgeService.evaluate(judgeReq);
+
+                        List<DimensionScore> dimensionScores = verdict.dimensions().stream()
+                                .map(dv -> {
+                                    DimensionScore ds = new DimensionScore();
+                                    ds.setDimensionName(dv.name());
+                                    ds.setScore(dv.score());
+                                    ds.setFeedback(dv.feedback());
+                                    return ds;
+                                }).collect(Collectors.toList());
+                        double overall = verdict.overall();
+
+                        double avgThreshold = dimensions.stream()
+                                .mapToDouble(DimensionConfig::getThreshold)
+                                .average().orElse(0.5);
+                        boolean passed = overall >= avgThreshold;
+
+                        EvaluationResult result = new EvaluationResult();
+                        result.setTaskId(taskId);
+                        result.setLlmId(llmId);
+                        result.setQuestionId(questionId);
+                        result.setOverallScore(overall);
+                        result.setRun(task.getRun());
+                        result.setPassed(passed);
+                        result.setLatencyMs(resp.latencyMs);
+                        result.setTokensUsed(resp.tokensUsed);
+                        result.setDimensionScores(dimensionScores);
+                        result.setRawRequest(resp.rawRequest);
+                        result.setAgentResponse(resp.content);
+                        result.setRawResponse(resp.rawResponse);
+                        resultMapper.insert(result);
+
+                        EvaluationTask latest = taskMapper.selectById(taskId);
+                        if (latest != null) {
+                            latest.setCompletedCount((latest.getCompletedCount() == null
+                                    ? 0 : latest.getCompletedCount()) + 1);
+                            taskMapper.updateById(latest);
+                        }
+                        log.info("评测完成: task={} llm={} question={} score={}", taskId, llmId, questionId, overall);
+                    } catch (Exception e) {
+                        log.error("评测失败: task={} llm={} question={} error={}", taskId, llmId, questionId, e.getMessage());
+                    }
+                }));
+            }
+        }
+
         // 等待全部完成
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
@@ -329,31 +403,54 @@ public class EvaluationServiceImpl implements EvaluationService {
     // ==================== 结果聚合 ====================
 
     /**
-     * 按 Agent 分组聚合评测结果。
-     * 每个 Agent 的 overallScore 为各题得分的加权平均，
-     * dimensionScores 为各维度得分按题平均。
+     * 按 Agent / LLM 分组聚合评测结果。
      */
-    private List<AgentResultVO> aggregateByAgent(EvaluationTask task,
+    private List<AgentResultVO> aggregateByTarget(EvaluationTask task,
                                                   List<EvaluationResult> allResults) {
-        Map<Long, List<EvaluationResult>> grouped = allResults.stream()
-                .collect(Collectors.groupingBy(EvaluationResult::getAgentId));
+        List<AgentResultVO> result = new ArrayList<>();
 
-        return task.getAgentIds().stream()
-                .map(agentId -> {
-                    List<EvaluationResult> agentResults = grouped.getOrDefault(agentId, List.of());
-                    return buildAgentResult(agentId, agentResults, task.getDimensions());
-                })
-                .collect(Collectors.toList());
+        // Agent 结果聚合
+        Map<Long, List<EvaluationResult>> agentGrouped = allResults.stream()
+                .filter(r -> r.getAgentId() != null)
+                .collect(Collectors.groupingBy(EvaluationResult::getAgentId));
+        for (Long agentId : task.getAgentIds() != null ? task.getAgentIds() : List.<Long>of()) {
+            List<EvaluationResult> ar = agentGrouped.getOrDefault(agentId, List.of());
+            result.add(buildAgentResult(agentId, ar, task.getDimensions()));
+        }
+
+        // LLM 结果聚合
+        Map<Long, List<EvaluationResult>> llmGrouped = allResults.stream()
+                .filter(r -> r.getLlmId() != null)
+                .collect(Collectors.groupingBy(EvaluationResult::getLlmId));
+        for (Long llmId : task.getLlmIds() != null ? task.getLlmIds() : List.<Long>of()) {
+            List<EvaluationResult> lr = llmGrouped.getOrDefault(llmId, List.of());
+            result.add(buildLLMResult(llmId, lr, task.getDimensions()));
+        }
+
+        return result;
     }
 
     /** 构建单个 Agent 的聚合结果 */
     private AgentResultVO buildAgentResult(Long agentId, List<EvaluationResult> results,
                                            List<DimensionConfig> dimensions) {
         Agent agent = agentMapper.selectById(agentId);
+        return buildTargetResult(agentId, agent != null ? agent.getName() : "未知Agent", results, dimensions);
+    }
 
+    /** 构建单个 LLM 的聚合结果 */
+    private AgentResultVO buildLLMResult(Long llmId, List<EvaluationResult> results,
+                                          List<DimensionConfig> dimensions) {
+        LLM llm = llmMapper.selectById(llmId);
+        return buildTargetResult(llmId, llm != null ? llm.getName() : "未知LLM", results, dimensions);
+    }
+
+    /** 构建聚合结果的通用方法 */
+    private AgentResultVO buildTargetResult(Long targetId, String targetName,
+                                             List<EvaluationResult> results,
+                                             List<DimensionConfig> dimensions) {
         AgentResultVO vo = new AgentResultVO();
-        vo.setAgentId(agentId);
-        vo.setAgentName(agent != null ? agent.getName() : "未知Agent");
+        vo.setAgentId(targetId);
+        vo.setAgentName(targetName);
         vo.setAvgLatencyMs(results.isEmpty() ? 0 :
                 (long) results.stream().mapToInt(EvaluationResult::getLatencyMs).average().orElse(0));
         vo.setTotalTokens(results.stream().mapToInt(EvaluationResult::getTokensUsed).sum());

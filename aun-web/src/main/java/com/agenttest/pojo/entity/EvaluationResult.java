@@ -27,8 +27,11 @@ public class EvaluationResult {
     /** 所属任务 ID，外键关联 evaluation_task.id */
     private Long taskId;
 
-    /** Agent ID，外键关联 agent.id */
+    /** Agent ID，外键关联 agent.id（LLM 评测时为空） */
     private Long agentId;
+
+    /** LLM ID，外键关联 llm.id（Agent 评测时为空） */
+    private Long llmId;
 
     /** 问题 ID，外键关联 question.id */
     private Long questionId;

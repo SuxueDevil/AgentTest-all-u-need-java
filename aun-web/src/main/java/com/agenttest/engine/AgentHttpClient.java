@@ -1,6 +1,7 @@
 package com.agenttest.engine;
 
 import com.agenttest.pojo.entity.Agent;
+import com.agenttest.pojo.entity.LLM;
 import com.agenttest.pojo.entity.Question;
 import com.agenttest.pojo.entity.Question.Turn;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -73,10 +74,77 @@ public class AgentHttpClient {
         }
     }
 
-    /** 解析响应 — 自动识别 SSE 或 JSON */
-    @SuppressWarnings("unchecked")
+    /**
+     * 向 LLM 模型发送评测请求。请求体固定为标准 OpenAI 格式，包含 model 字段。
+     *
+     * @param llm      LLM 实体
+     * @param question 题目实体
+     * @return 响应结果
+     */
+    public AgentResponse sendToLLM(LLM llm, Question question) {
+        long start = System.currentTimeMillis();
+
+        List<Map<String, String>> messages = buildMessages(question);
+        String messagesJson;
+        try {
+            messagesJson = objectMapper.writeValueAsString(messages);
+        } catch (Exception e) {
+            return new AgentResponse("", 0, 0, "", "JSON序列化失败: " + e.getMessage());
+        }
+        // LLM 请求体固定: model + messages + max_tokens
+        String bodyStr = "{\"model\":\"" + llm.getModel()
+                + "\",\"messages\":" + messagesJson + ",\"max_tokens\":1024}";
+
+        try {
+            log.info("LLM调用: {} model={} url={}", llm.getName(), llm.getModel(), llm.getEndpointUrl());
+            HttpHeaders httpHeaders = new HttpHeaders();
+            httpHeaders.setContentType(MediaType.APPLICATION_JSON);
+            httpHeaders.setBearerAuth(llm.getApiKey());
+            HttpEntity<String> entity = new HttpEntity<>(bodyStr, httpHeaders);
+            ResponseEntity<String> response = restTemplate.exchange(
+                    llm.getEndpointUrl(), HttpMethod.POST, entity, String.class);
+            int latencyMs = (int) (System.currentTimeMillis() - start);
+            String content = "";
+            int tokensUsed = 0;
+            if (response.getBody() != null) {
+                Map<String, Object> respMap = objectMapper.readValue(response.getBody(), Map.class);
+                content = extractByPath(respMap, "choices[0].message.content");
+                Map<String, Object> usage = (Map<String, Object>) respMap.get("usage");
+                if (usage != null) {
+                    tokensUsed = ((Number) usage.getOrDefault("total_tokens", 0)).intValue();
+                }
+            }
+            log.info("LLM调用完成: {} latency={}ms tokens={}", llm.getName(), latencyMs, tokensUsed);
+            return new AgentResponse(content, tokensUsed, latencyMs, bodyStr, response.getBody() != null ? response.getBody() : "");
+        } catch (Exception e) {
+            int latencyMs = (int) (System.currentTimeMillis() - start);
+            log.error("LLM调用失败: {} - {}", llm.getName(), e.getMessage());
+            return new AgentResponse("", 0, latencyMs, bodyStr, e.getMessage());
+        }
+    }
+
+    /** LLM 用解析 — 固定标准 OpenAI 路径 */
+    private AgentResponse parseResponse(ClientHttpResponse response,
+                                         String bodyStr, long start) throws IOException {
+        return parseResponseInternal(response, bodyStr, start,
+                "choices[0].message.content");
+    }
+
+    /** Agent 用解析 — 按 Agent 配置路径提取 */
     private AgentResponse parseResponse(ClientHttpResponse response, Agent agent,
                                          String bodyStr, long start) throws IOException {
+        String contentPath = (agent.getResponseContentPath() != null
+                && !agent.getResponseContentPath().isBlank())
+                ? agent.getResponseContentPath()
+                : "choices[0].message.content";
+        return parseResponseInternal(response, bodyStr, start, contentPath);
+    }
+
+    /** 解析响应 — 自动识别 SSE 或 JSON */
+    @SuppressWarnings("unchecked")
+    private AgentResponse parseResponseInternal(ClientHttpResponse response,
+                                                 String bodyStr, long start,
+                                                 String contentPath) throws IOException {
         int latencyMs = (int) (System.currentTimeMillis() - start);
         StringBuilder rawResponse = new StringBuilder();
         String content = "";
@@ -122,11 +190,7 @@ public class AgentHttpClient {
                     jsonBuf.append(line);
                 }
                 Map<String, Object> respMap = objectMapper.readValue(jsonBuf.toString(), Map.class);
-                String path = (agent.getResponseContentPath() != null
-                        && !agent.getResponseContentPath().isBlank())
-                        ? agent.getResponseContentPath()
-                        : "choices[0].message.content";
-                content = extractByPath(respMap, path);
+                content = extractByPath(respMap, contentPath);
                 Map<String, Object> usage = (Map<String, Object>) respMap.get("usage");
                 if (usage != null) {
                     tokensUsed = ((Number) usage.getOrDefault("total_tokens", 0)).intValue();
@@ -134,7 +198,7 @@ public class AgentHttpClient {
             }
         }
 
-        log.info("Agent调用完成: agent={}, latency={}ms, tokens={}", agent.getName(), latencyMs, tokensUsed);
+        log.info("HTTP调用完成: latency={}ms, tokens={}", latencyMs, tokensUsed);
         return new AgentResponse(content, tokensUsed, latencyMs, bodyStr,
                 rawResponse.toString().trim());
     }

@@ -38,6 +38,10 @@ public class EvaluationTask {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<Long> agentIds;
 
+    /** 参评 LLM ID 列表，JSON 数组 [1, 2] */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<Long> llmIds;
+
     /** 评测维度配置 [{name, displayName, weight, threshold}] */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<DimensionConfig> dimensions;

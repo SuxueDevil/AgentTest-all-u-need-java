@@ -24,6 +24,8 @@ public class EvaluationTaskVO {
     private List<Long> questionIds;
     /** 参评 Agent ID 列表 */
     private List<Long> agentIds;
+    /** 参评 LLM ID 列表 */
+    private List<Long> llmIds;
     /** 评测维度配置 */
     private List<DimensionConfig> dimensions;
     /** 题目总数 */

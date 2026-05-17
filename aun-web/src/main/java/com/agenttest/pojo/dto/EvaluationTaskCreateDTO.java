@@ -26,9 +26,11 @@ public class EvaluationTaskCreateDTO {
     @NotEmpty(message = "请至少选择一道题目")
     private List<Long> questionIds;
 
-    /** 参评 Agent ID 列表（必填，至少选一个） */
-    @NotEmpty(message = "请至少选择一个Agent")
+    /** 参评 Agent ID 列表（可选） */
     private List<Long> agentIds;
+
+    /** 参评 LLM ID 列表（可选） */
+    private List<Long> llmIds;
 
     /** 评测维度配置（必填，至少一个维度） */
     @NotEmpty(message = "请至少配置一个评测维度")
