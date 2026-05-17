@@ -2,6 +2,7 @@ package com.agenttest.pojo.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
@@ -38,6 +39,10 @@ public class LLM {
 
     /** 创建时间 */
     private LocalDateTime createdAt;
+
+    /** 逻辑删除标记（0=未删 / 1=已删），MyBatis-Plus 自动处理 */
+    @TableLogic
+    private Integer deleted;
 
     /** 更新时间 */
     private LocalDateTime updatedAt;

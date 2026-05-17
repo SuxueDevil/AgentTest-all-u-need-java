@@ -3,6 +3,7 @@ package com.agenttest.pojo.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import com.fasterxml.jackson.annotation.JsonAlias;
@@ -53,6 +54,10 @@ public class Question {
 
     /** 创建时间，数据库自动填充 */
     private LocalDateTime createdAt;
+
+    /** 逻辑删除标记（0=未删 / 1=已删），MyBatis-Plus 自动处理 */
+    @TableLogic
+    private Integer deleted;
 
     /** 更新时间，数据库自动更新 */
     private LocalDateTime updatedAt;

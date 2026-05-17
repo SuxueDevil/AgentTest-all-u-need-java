@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS llm (
     endpoint_url    VARCHAR(500) COMMENT 'API端点',
     api_key         VARCHAR(1000) COMMENT 'API Key',
     status          VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态',
+    deleted         TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='LLM模型';
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS agent (
     response_content_path VARCHAR(100) COMMENT '响应提取路径，如choices[0].message.content',
     auth_type       VARCHAR(20) DEFAULT 'none' COMMENT '鉴权方式: none/bearer/api_key/basic/custom',
     auth_credential VARCHAR(1000) COMMENT '鉴权凭证',
+    deleted         TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent';
@@ -55,6 +57,7 @@ CREATE TABLE IF NOT EXISTS question (
     turns           JSON COMMENT '多轮对话内容 [{turnOrder, role, content}]',
     expected_answer TEXT COMMENT '期望答案（评分参考）',
     tags            JSON COMMENT '标签',
+    deleted         TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除 0=未删 1=已删',
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='题库';

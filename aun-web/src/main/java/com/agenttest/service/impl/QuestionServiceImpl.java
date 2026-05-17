@@ -162,7 +162,7 @@ public class QuestionServiceImpl implements QuestionService {
      */
     @Override
     public void delete(Long id) {
-        log.info("删除问题，id={}", id);
+        log.info("逻辑删除问题，id={}", id);
         getEntityById(id);
         questionMapper.deleteById(id);
     }
@@ -179,7 +179,7 @@ public class QuestionServiceImpl implements QuestionService {
         if (ids == null || ids.isEmpty()) {
             throw new BusinessException(400, "请选择要删除的问题");
         }
-        log.info("批量删除问题，共 {} 条", ids.size());
+        log.info("批量逻辑删除问题，共 {} 条", ids.size());
         return questionMapper.deleteBatchIds(ids);
     }
 
