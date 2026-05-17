@@ -3,6 +3,7 @@ package com.agenttest.service;
 import com.agenttest.common.utils.FileExportResult;
 import com.agenttest.common.PageResult;
 import com.agenttest.pojo.dto.QuestionCreateDTO;
+import com.agenttest.pojo.dto.QuestionGenerateDTO;
 import com.agenttest.pojo.dto.QuestionQueryDTO;
 import com.agenttest.pojo.dto.QuestionUpdateDTO;
 import com.agenttest.pojo.vo.QuestionVO;
@@ -53,12 +54,8 @@ public interface QuestionService {
     /**
      * AI 生成题目 — 调用 LLM 按分类/难度/类型/数量批量生成并入库。
      *
-     * @param category     分类: reasoning/coding/qa/translation/summarization
-     * @param difficulty   难度: easy/medium/hard
-     * @param questionType 类型: single / multi
-     * @param count        生成数量 1~20
+     * @param dto 生成参数（category / difficulty / questionType / count / topic）
      * @return 入库的题目列表
      */
-    List<QuestionVO> generate(String category, String difficulty,
-                               String questionType, int count, String topic);
+    List<QuestionVO> generate(QuestionGenerateDTO dto);
 }

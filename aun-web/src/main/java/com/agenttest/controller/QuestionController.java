@@ -4,6 +4,7 @@ import com.agenttest.common.utils.FileExportResult;
 import com.agenttest.common.PageResult;
 import com.agenttest.common.Response;
 import com.agenttest.pojo.dto.QuestionCreateDTO;
+import com.agenttest.pojo.dto.QuestionGenerateDTO;
 import com.agenttest.pojo.dto.QuestionQueryDTO;
 import com.agenttest.pojo.dto.QuestionUpdateDTO;
 import com.agenttest.pojo.vo.QuestionVO;
@@ -145,16 +146,11 @@ public class QuestionController {
     /**
      * AI 生成题目 — 调用 LLM 按分类/难度/类型/数量批量生成并入库。
      *
-     * @param params { category, difficulty, questionType, count }
+     * @param dto 生成参数（category / difficulty / questionType / count / topic），各字段均有默认值
      * @return 入库的题目列表
      */
     @PostMapping("/generate")
-    public Response<List<QuestionVO>> generate(@RequestBody Map<String, Object> params) {
-        String category = (String) params.getOrDefault("category", "reasoning");
-        String difficulty = (String) params.getOrDefault("difficulty", "medium");
-        String questionType = (String) params.getOrDefault("questionType", "single");
-        int count = Math.min((int) params.getOrDefault("count", 5), 20);
-        String topic = (String) params.getOrDefault("topic", "");
-        return Response.success(questionService.generate(category, difficulty, questionType, count, topic));
+    public Response<List<QuestionVO>> generate(@RequestBody QuestionGenerateDTO dto) {
+        return Response.success(questionService.generate(dto));
     }
 }

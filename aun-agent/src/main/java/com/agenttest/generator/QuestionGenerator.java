@@ -1,5 +1,6 @@
 package com.agenttest.generator;
 
+import com.agenttest.pojo.dto.QuestionGenerateDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -28,18 +29,14 @@ public class QuestionGenerator {
     /**
      * 批量生成题目。
      *
-     * @param category     分类: reasoning/coding/qa/translation/summarization
-     * @param difficulty   难度: easy/medium/hard
-     * @param questionType 类型: single（单轮）/ multi（多轮）
-     * @param count        生成数量 1~20
+     * @param dto 生成参数（category / difficulty / questionType / count / topic），各字段均有默认值
      * @return 生成的题目列表
      */
     @SuppressWarnings("unchecked")
-    public List<GeneratedQuestion> generate(String category, String difficulty,
-                                             String questionType, int count, String topic) {
-        String prompt = buildPrompt(category, difficulty, questionType, count, topic);
+    public List<GeneratedQuestion> generate(QuestionGenerateDTO dto) {
+        String prompt = buildPrompt(dto);
         log.info("开始生成题目: category={} difficulty={} type={} count={}",
-                category, difficulty, questionType, count);
+                dto.getCategory(), dto.getDifficulty(), dto.getQuestionType(), dto.getCount());
 
         try {
             String content = chatClient.prompt()
@@ -68,16 +65,17 @@ public class QuestionGenerator {
     /**
      * 构建生成 Prompt，包含分类中文名、难度、类型要求、可选主题场景。
      *
-     * @param category     分类标识
-     * @param difficulty   难度标识
-     * @param questionType 题目类型: single / multi
-     * @param count        生成数量
-     * @param topic        主题场景（可为空），如"医疗问诊"
+     * @param dto 生成参数
      * @return 完整的 Prompt 文本
      */
-    private String buildPrompt(String category, String difficulty,
-                                String questionType, int count, String topic) {
-        String categoryName = switch (category != null ? category : "reasoning") {
+    private String buildPrompt(QuestionGenerateDTO dto) {
+        String category = dto.getCategory() != null ? dto.getCategory() : "reasoning";
+        String difficulty = dto.getDifficulty() != null ? dto.getDifficulty() : "medium";
+        String questionType = dto.getQuestionType() != null ? dto.getQuestionType() : "single";
+        int count = dto.getCount();
+        String topic = dto.getTopic();
+
+        String categoryName = switch (category) {
             case "reasoning" -> "逻辑推理";
             case "coding" -> "编程";
             case "qa" -> "知识问答";
@@ -86,7 +84,7 @@ public class QuestionGenerator {
             default -> "通用";
         };
 
-        String difficultyName = switch (difficulty != null ? difficulty : "medium") {
+        String difficultyName = switch (difficulty) {
             case "easy" -> "简单";
             case "medium" -> "中等";
             case "hard" -> "困难";

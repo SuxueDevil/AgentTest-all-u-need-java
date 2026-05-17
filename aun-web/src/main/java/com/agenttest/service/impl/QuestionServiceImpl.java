@@ -12,6 +12,7 @@ import com.agenttest.common.PageResult;
 import com.agenttest.common.exception.BusinessException;
 import com.agenttest.mapper.QuestionMapper;
 import com.agenttest.pojo.dto.QuestionCreateDTO;
+import com.agenttest.pojo.dto.QuestionGenerateDTO;
 import com.agenttest.pojo.dto.QuestionQueryDTO;
 import com.agenttest.pojo.dto.QuestionUpdateDTO;
 import com.agenttest.pojo.entity.Question;
@@ -399,19 +400,23 @@ public class QuestionServiceImpl implements QuestionService {
     // ==================== AI 生成 ====================
 
     @Override
-    public List<QuestionVO> generate(String category, String difficulty,
-                                      String questionType, int count, String topic) {
-        int safeCount = Math.min(count, 20);
-        List<GeneratedQuestion> generated = questionGenerator.generate(
-                category, difficulty, questionType, safeCount, topic);
+    public List<QuestionVO> generate(QuestionGenerateDTO dto) {
+        // 数量上限保护
+        dto.setCount(Math.min(dto.getCount(), 20));
+
+        List<GeneratedQuestion> generated = questionGenerator.generate(dto);
+
+        String category = dto.getCategory() != null ? dto.getCategory() : "reasoning";
+        String difficulty = dto.getDifficulty() != null ? dto.getDifficulty() : "medium";
+        String questionType = dto.getQuestionType() != null ? dto.getQuestionType() : "single";
 
         List<QuestionVO> result = new ArrayList<>();
         for (GeneratedQuestion gq : generated) {
             Question q = new Question();
             q.setTitle(gq.title());
-            q.setCategory(category != null ? category : "reasoning");
-            q.setDifficulty(difficulty != null ? difficulty : "medium");
-            q.setQuestionType(questionType != null ? questionType : "single");
+            q.setCategory(category);
+            q.setDifficulty(difficulty);
+            q.setQuestionType(questionType);
             q.setExpectedAnswer(gq.expectedAnswer());
             q.setTags(gq.tags());
 
