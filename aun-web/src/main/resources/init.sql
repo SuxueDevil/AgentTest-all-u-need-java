@@ -10,7 +10,21 @@ CREATE DATABASE IF NOT EXISTS agent_aun
 USE agent_aun;
 
 -- ============================================================
--- 1. agent — 待评测 Agent
+-- 1. llm — 待评测 LLM 模型
+-- ============================================================
+CREATE TABLE IF NOT EXISTS llm (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name            VARCHAR(100) NOT NULL COMMENT 'LLM名称',
+    model           VARCHAR(100) NOT NULL COMMENT '模型标识，如deepseek-chat',
+    endpoint_url    VARCHAR(500) COMMENT 'API端点',
+    api_key         VARCHAR(1000) COMMENT 'API Key',
+    status          VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态',
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='LLM模型';
+
+-- ============================================================
+-- 2. agent — 待评测 Agent 应用
 -- ============================================================
 CREATE TABLE IF NOT EXISTS agent (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -53,7 +67,8 @@ CREATE TABLE IF NOT EXISTS evaluation_task (
     name            VARCHAR(200) NOT NULL COMMENT '任务名称',
     description     VARCHAR(500) COMMENT '描述',
     question_ids    JSON NOT NULL COMMENT '题目ID列表',
-    agent_ids       JSON NOT NULL COMMENT '参评Agent ID列表',
+    agent_ids       JSON COMMENT '参评Agent ID列表',
+    llm_ids         JSON COMMENT '参评LLM ID列表',
     dimensions      JSON NOT NULL COMMENT '评测维度配置 [{name, displayName, weight, threshold}]',
     question_count  INT NOT NULL DEFAULT 0 COMMENT '题目总数',
     completed_count INT NOT NULL DEFAULT 0 COMMENT '已完成数',
@@ -70,7 +85,8 @@ CREATE TABLE IF NOT EXISTS evaluation_task (
 CREATE TABLE IF NOT EXISTS evaluation_result (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
     task_id         BIGINT NOT NULL COMMENT '任务ID',
-    agent_id        BIGINT NOT NULL COMMENT 'Agent ID',
+    agent_id        BIGINT COMMENT 'Agent ID',
+    llm_id          BIGINT COMMENT 'LLM ID',
     question_id     BIGINT NOT NULL COMMENT '问题ID',
     run             INT NOT NULL DEFAULT 1 COMMENT '评测批次号',
     overall_score   DECIMAL(5,3) COMMENT '综合加权得分(0-1)',
@@ -82,7 +98,8 @@ CREATE TABLE IF NOT EXISTS evaluation_result (
     raw_response    TEXT COMMENT 'Agent原始响应',
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (task_id) REFERENCES evaluation_task(id) ON DELETE CASCADE,
-    FOREIGN KEY (agent_id) REFERENCES agent(id),
+    FOREIGN KEY (agent_id) REFERENCES agent(id) ON DELETE CASCADE,
+    FOREIGN KEY (llm_id) REFERENCES llm(id) ON DELETE CASCADE,
     FOREIGN KEY (question_id) REFERENCES question(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='评测结果';
 
