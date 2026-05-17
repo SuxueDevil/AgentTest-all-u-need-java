@@ -115,7 +115,9 @@ public class EvaluationServiceImpl implements EvaluationService {
         task.setAgentIds(dto.getAgentIds());
         task.setLlmIds(dto.getLlmIds());
         task.setDimensions(dto.getDimensions());
-        task.setQuestionCount(dto.getQuestionIds().size());
+        int targetCount = dto.getAgentIds().size()
+                + (dto.getLlmIds() != null ? dto.getLlmIds().size() : 0);
+        task.setQuestionCount(dto.getQuestionIds().size() * targetCount);
         task.setCompletedCount(0);
         task.setStatus("pending");
         task.setRun(1);

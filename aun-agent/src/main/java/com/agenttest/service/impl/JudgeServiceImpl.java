@@ -36,12 +36,8 @@ public class JudgeServiceImpl implements JudgeService {
     /**
      * 调用 Judge LLM 进行多维度评分。
      * <p>
-     * 将 JudgeRequest 各字段拼入评分 Prompt，发给 ChatClient，
-     * 返回的 JSON 经 BeanOutputConverter 映射为 JudgeVerdict。
+     * 优先用 BeanOutputConverter 解析，失败时手动提取 JSON 兜底。
      * 调用失败时返回 score=0 + error feedback，不抛异常阻断评测流程。
-     *
-     * @param request 评分请求（question / expectedAnswer / agentResponse / criteria / dimensions）
-     * @return JudgeVerdict 评分结果
      */
     @Override
     public JudgeVerdict evaluate(JudgeRequest request) {
@@ -57,6 +53,9 @@ public class JudgeServiceImpl implements JudgeService {
                 throw new RuntimeException("Judge返回空响应");
             }
 
+            // 先提取 JSON — LLM 可能会加 markdown 或说明文字
+            content = extractJson(content);
+
             JudgeVerdict verdict = outputConverter.convert(content);
             log.info("Judge评分完成: overall={}", verdict.overall());
             return verdict;
@@ -66,15 +65,48 @@ public class JudgeServiceImpl implements JudgeService {
         }
     }
 
+    /** 手动从 LLM 返回文本中提取 JSON 并映射为 JudgeVerdict，容错字段顺序和多余文本 */
+    private JudgeVerdict parseManually(String content, Map<String, String> dimensions) {
+        String json = extractJson(content);
+        try {
+            Map<String, Object> map = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readValue(json, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            double overall = ((Number) map.getOrDefault("overall", 0.0)).doubleValue();
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> dims = (List<Map<String, Object>>) map.get("dimensions");
+            List<JudgeVerdict.DimensionVerdict> verdicts = new java.util.ArrayList<>();
+            if (dims != null) {
+                for (Map<String, Object> d : dims) {
+                    String name = (String) d.get("name");
+                    double score = ((Number) d.getOrDefault("score", 0.0)).doubleValue();
+                    String feedback = (String) d.getOrDefault("feedback", "");
+                    verdicts.add(new JudgeVerdict.DimensionVerdict(name, score, feedback));
+                }
+            }
+            return new JudgeVerdict(verdicts, overall);
+        } catch (Exception e) {
+            throw new RuntimeException("手动JSON解析失败: " + e.getMessage());
+        }
+    }
+
+    /** 从 LLM 返回内容中提取 JSON 片段 */
+    private String extractJson(String content) {
+        // 去掉 markdown 代码块
+        String cleaned = content
+                .replaceAll("```json\\s*", "")
+                .replaceAll("```\\s*", "")
+                .trim();
+        // 找第一个 { 到最后一个 }
+        int start = cleaned.indexOf('{');
+        int end = cleaned.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return cleaned.substring(start, end + 1);
+        }
+        return cleaned;
+    }
+
     /**
-     * 构建评分 Prompt，包含：Agent 角色定义、用户问题、期望答案、Agent 回答、评分维度、JSON Schema。
-     *
-     * @param question       用户问题文本
-     * @param expectedAnswer 期望答案（可为空）
-     * @param agentResponse  Agent 的实际回答
-     * @param criteria       Agent 角色定义与评估标准
-     * @param dimensions     评分维度 Map（name → 说明）
-     * @return 完整的评分 Prompt 字符串
+     * 构建评分 Prompt — 给模板示例而非 JSON Schema，避免 LLM 原样输出 Schema。
      */
     private String buildPrompt(String question, String expectedAnswer,
                                 String agentResponse, String criteria,
@@ -83,11 +115,13 @@ public class JudgeServiceImpl implements JudgeService {
                 .map(e -> "- " + e.getKey() + "：" + e.getValue())
                 .collect(Collectors.joining("\n"));
 
+        String dimTemplate = dimensions.keySet().stream()
+                .map(name -> "    {\"name\": \"" + name + "\", \"score\": 0.0, \"feedback\": \"评分理由\"}")
+                .collect(Collectors.joining(",\n"));
+
         String truncated = agentResponse != null && agentResponse.length() > 4096
                 ? agentResponse.substring(0, 4096) + "…(已截断)"
                 : agentResponse;
-
-        String schema = outputConverter.getJsonSchema();
 
         return """
                你是一个专业的 AI 评测裁判。请根据以下信息对 Agent 的回答进行多维度评分。
@@ -109,16 +143,22 @@ public class JudgeServiceImpl implements JudgeService {
 
                请用 0.0~1.0 为每个维度打分，1.0 代表完美满足角色要求和期望答案。
                每个维度的 feedback 用 1~2 句话解释评分理由。
+               只返回 JSON，不要额外说明。
 
-               请严格按以下 JSON Schema 返回：
+               返回格式示例：
+               {
+                 "dimensions": [
                %s
+                 ],
+                 "overall": 0.0
+               }
                """.formatted(
                 criteria != null ? criteria : "通用 AI 助手",
                 question != null ? question : "",
                 expectedAnswer != null ? expectedAnswer : "无期望答案",
                 truncated != null ? truncated : "",
                 dimList,
-                schema
+                dimTemplate
         );
     }
 
