@@ -19,7 +19,7 @@ public class AgentVO {
     private String name;
     /** 描述信息 */
     private String description;
-    /** 底层模型标识，如 gpt-4o */
+    /** 底层模型标识（可选） */
     private String model;
     /** Agent 类型: llm / multi-modal / tool-use / code-gen / rag */
     private String type;

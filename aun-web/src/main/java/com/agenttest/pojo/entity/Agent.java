@@ -27,7 +27,7 @@ public class Agent {
     /** 描述信息 */
     private String description;
 
-    /** 底层模型标识，如 gpt-4o、claude-opus-4-7 */
+    /** 底层模型标识（可选，仅标注参考），如 gpt-4o */
     private String model;
 
     /** 类型: llm / multi-modal / tool-use / code-gen / rag */

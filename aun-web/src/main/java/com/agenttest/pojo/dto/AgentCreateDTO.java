@@ -17,7 +17,7 @@ public class AgentCreateDTO {
     /** 描述信息 */
     private String description;
 
-    /** 底层模型，如 gpt-4o */
+    /** 底层模型（可选，仅标注参考） */
     private String model;
 
     /** Agent 类型（必填） */

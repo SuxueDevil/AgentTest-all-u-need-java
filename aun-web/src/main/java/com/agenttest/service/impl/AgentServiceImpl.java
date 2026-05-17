@@ -4,6 +4,7 @@ import cn.hutool.core.bean.BeanUtil;
 import com.agenttest.common.PageResult;
 import com.agenttest.common.exception.BusinessException;
 import com.agenttest.mapper.AgentMapper;
+import com.agenttest.mapper.EvaluationResultMapper;
 import com.agenttest.pojo.dto.AgentCreateDTO;
 import com.agenttest.pojo.dto.AgentQueryDTO;
 import com.agenttest.pojo.dto.AgentUpdateDTO;
@@ -42,11 +43,14 @@ public class AgentServiceImpl implements AgentService {
 
     private final AgentMapper agentMapper;
     private final RestTemplate restTemplate;
+    private final EvaluationResultMapper evaluationResultMapper;
 
-    /** 构造器注入，Spring 自动装配 AgentMapper 和 RestTemplate */
-    public AgentServiceImpl(AgentMapper agentMapper, RestTemplate restTemplate) {
+    /** 构造器注入 */
+    public AgentServiceImpl(AgentMapper agentMapper, RestTemplate restTemplate,
+                             EvaluationResultMapper evaluationResultMapper) {
         this.agentMapper = agentMapper;
         this.restTemplate = restTemplate;
+        this.evaluationResultMapper = evaluationResultMapper;
     }
 
     // ==================== 公开方法 ====================
@@ -146,6 +150,9 @@ public class AgentServiceImpl implements AgentService {
     public void delete(Long id) {
         log.info("删除 Agent，id={}", id);
         getEntityById(id);           // 不存在会抛异常
+        // 先删除关联的评测结果，避免外键约束报错
+        evaluationResultMapper.delete(new LambdaQueryWrapper<com.agenttest.pojo.entity.EvaluationResult>()
+                .eq(com.agenttest.pojo.entity.EvaluationResult::getAgentId, id));
         agentMapper.deleteById(id);
     }
 
