@@ -290,7 +290,6 @@ public class EvaluationServiceImpl implements EvaluationService {
                                 ? httpClient.sendMultiTurn(agent, question)
                                 : List.of(httpClient.send(agent, question));
 
-                        int created = 0;
                         for (int turnIdx = 0; turnIdx < responses.size(); turnIdx++) {
                             AgentResponse resp = responses.get(turnIdx);
                             if (Boolean.TRUE.equals(cancelFlags.get(taskId))) break;
@@ -334,21 +333,17 @@ public class EvaluationServiceImpl implements EvaluationService {
                             // 多轮标轮次序号，单轮为 null
                             result.setTurnOrder(isMultiTurn(question) ? turnIdx + 1 : null);
                             resultMapper.insert(result);
-                            created++;
-                        }
 
-                        // 线程安全更新进度（多轮会一次加多个）
-                        if (created > 0) {
+                            // 每完成一轮立刻 +1，前端 3s 轮询可看到进度逐步增长
                             EvaluationTask latest = taskMapper.selectById(taskId);
                             if (latest != null) {
                                 latest.setCompletedCount((latest.getCompletedCount() == null
-                                        ? 0 : latest.getCompletedCount()) + created);
+                                        ? 0 : latest.getCompletedCount()) + 1);
                                 taskMapper.updateById(latest);
                             }
                         }
-                        log.info("评测完成: task={} agent={} question={} turns={} score={}",
-                                taskId, agentId, questionId, responses.size(),
-                                responses.stream().mapToInt(r -> (int)(r.content.length() > 0 ? 1 : 0)).average().orElse(0));
+                        log.info("评测完成: task={} agent={} question={} turns={}",
+                                taskId, agentId, questionId, responses.size());
                     } catch (Exception e) {
                         log.error("评测失败: task={} agent={} question={} error={}", taskId, agentId, questionId, e.getMessage());
                     }
@@ -372,7 +367,6 @@ public class EvaluationServiceImpl implements EvaluationService {
                                 ? httpClient.sendMultiTurnToLLM(llm, question)
                                 : List.of(httpClient.sendToLLM(llm, question));
 
-                        int created = 0;
                         for (int turnIdx = 0; turnIdx < responses.size(); turnIdx++) {
                             AgentResponse resp = responses.get(turnIdx);
                             if (Boolean.TRUE.equals(cancelFlags.get(taskId))) break;
@@ -415,14 +409,12 @@ public class EvaluationServiceImpl implements EvaluationService {
                             result.setRawResponse(resp.rawResponse);
                             result.setTurnOrder(isMultiTurn(question) ? turnIdx + 1 : null);
                             resultMapper.insert(result);
-                            created++;
-                        }
 
-                        if (created > 0) {
+                            // 每完成一轮立刻 +1
                             EvaluationTask latest = taskMapper.selectById(taskId);
                             if (latest != null) {
                                 latest.setCompletedCount((latest.getCompletedCount() == null
-                                        ? 0 : latest.getCompletedCount()) + created);
+                                        ? 0 : latest.getCompletedCount()) + 1);
                                 taskMapper.updateById(latest);
                             }
                         }
