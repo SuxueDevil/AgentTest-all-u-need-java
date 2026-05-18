@@ -45,6 +45,8 @@ public class AgentResultVO {
         private Long questionId;
         /** 问题标题 */
         private String questionTitle;
+        /** 多轮对话轮次序号（1-based），单轮为 null */
+        private Integer turnOrder;
         /** 该题综合得分 */
         private Double score;
         /** 是否通过 */

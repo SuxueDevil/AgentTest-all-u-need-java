@@ -15,13 +15,14 @@ import org.springframework.web.client.RestTemplate;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Agent HTTP 客户端 — 向被测 Agent 发送评测请求并解析响应。
  * <p>
+ * 单轮 send() 一次性发送全部 questions，
+ * 多轮 sendMultiTurn() 逐轮迭代发送，每轮用前一轮的真实回答构建上下文。
  * 自动识别响应类型：SSE 流式（data: 开头）或普通 JSON（{ 开头）。
- * 支持通过 Agent 配置自定义请求模板（{{messages}} 占位符）和响应提取路径。
- * 鉴权支持 bearer / api_key / basic / custom 四种方式。
  */
 @Component
 public class AgentHttpClient {
@@ -37,28 +38,19 @@ public class AgentHttpClient {
         this.objectMapper = objectMapper;
     }
 
+    // ==================== Agent 单轮 ====================
+
     /**
-     * 向指定 Agent 发送评测请求。自动识别 SSE 流式或普通 JSON 响应。
+     * 向 Agent 发送单次评测请求（单轮题目或多轮迭代中的一个 turn）。
      *
      * @param agent    被测 Agent 实体
-     * @param question 题目实体
-     * @return 响应结果: { content, tokensUsed, latencyMs, rawRequest, rawResponse }
+     * @param messages 本次请求的 messages 数组（由调用方组装好）
+     * @return 响应结果
      */
-    @SuppressWarnings("unchecked")
-    public AgentResponse send(Agent agent, Question question) {
+    private AgentResponse execute(Agent agent, List<Map<String, String>> messages) {
         long start = System.currentTimeMillis();
-
-        // 1. 组装 messages 并构造请求体
-        List<Map<String, String>> messages = buildMessages(question);
         String bodyStr = buildRequestBody(agent, messages);
 
-        // 2. 设置请求头 + 鉴权
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        applyAuth(headers, agent);
-
-        // 3. 发送请求并流式读取响应
-        HttpEntity<String> request = new HttpEntity<>(bodyStr, headers);
         try {
             return restTemplate.execute(agent.getEndpointUrl(), HttpMethod.POST,
                     req -> {
@@ -75,23 +67,71 @@ public class AgentHttpClient {
     }
 
     /**
-     * 向 LLM 模型发送评测请求。请求体固定为标准 OpenAI 格式，包含 model 字段。
+     * 向 Agent 发送评测请求（单轮题目入口）。
+     * 【Java 类比】≈ AgentHttpClient.execute(agent, messages[])
+     */
+    public AgentResponse send(Agent agent, Question question) {
+        return execute(agent, buildMessages(question));
+    }
+
+    // ==================== Agent 多轮迭代 ====================
+
+    /**
+     * 多轮迭代评测 — 仅发送 user 消息，逐轮用实际的 LLM 回答构建上下文。
+     * 每轮独立 HTTP 调用，返回列表长度等于 user 消息数。
+     *
+     * @param agent    被测 Agent
+     * @param question 多轮题目
+     * @return 每轮一个 AgentResponse，顺序与 user 消息顺序一致
+     */
+    public List<AgentResponse> sendMultiTurn(Agent agent, Question question) {
+        List<Turn> userTurns = getUserTurns(question);
+        List<AgentResponse> results = new ArrayList<>();
+        // 对话历史: 逐轮追加 user 消息 + 实际 LLM 回答
+        List<Map<String, String>> history = new ArrayList<>();
+
+        for (int i = 0; i < userTurns.size(); i++) {
+            Turn turn = userTurns.get(i);
+
+            // 追加当前 user 消息
+            Map<String, String> userMsg = new LinkedHashMap<>();
+            userMsg.put("role", "user");
+            userMsg.put("content", turn.getContent());
+            history.add(userMsg);
+
+            // 发送完整对话历史（复制一份避免并发修改）
+            AgentResponse resp = execute(agent, new ArrayList<>(history));
+            results.add(resp);
+
+            // 将 LLM 真实回答追加到历史，供下一轮上下文使用
+            Map<String, String> assistantMsg = new LinkedHashMap<>();
+            assistantMsg.put("role", "assistant");
+            assistantMsg.put("content", resp.content);
+            history.add(assistantMsg);
+
+            log.info("Agent多轮评测 turn={}/{} agent={} latency={}ms",
+                    i + 1, userTurns.size(), agent.getName(), resp.latencyMs);
+        }
+        return results;
+    }
+
+    // ==================== LLM 单轮 ====================
+
+    /**
+     * 向 LLM 发送单次请求（单轮题目或多轮迭代中的一个 turn）。
      *
      * @param llm      LLM 实体
-     * @param question 题目实体
+     * @param messages 消息数组
      * @return 响应结果
      */
-    public AgentResponse sendToLLM(LLM llm, Question question) {
+    private AgentResponse executeLLM(LLM llm, List<Map<String, String>> messages) {
         long start = System.currentTimeMillis();
-
-        List<Map<String, String>> messages = buildMessages(question);
         String messagesJson;
         try {
             messagesJson = objectMapper.writeValueAsString(messages);
         } catch (Exception e) {
             return new AgentResponse("", 0, 0, "", "JSON序列化失败: " + e.getMessage());
         }
-        // LLM 请求体固定: model + messages + max_tokens
         String bodyStr = "{\"model\":\"" + llm.getModel()
                 + "\",\"messages\":" + messagesJson + ",\"max_tokens\":1024}";
 
@@ -115,13 +155,59 @@ public class AgentHttpClient {
                 }
             }
             log.info("LLM调用完成: {} latency={}ms tokens={}", llm.getName(), latencyMs, tokensUsed);
-            return new AgentResponse(content, tokensUsed, latencyMs, bodyStr, response.getBody() != null ? response.getBody() : "");
+            return new AgentResponse(content, tokensUsed, latencyMs, bodyStr,
+                    response.getBody() != null ? response.getBody() : "");
         } catch (Exception e) {
             int latencyMs = (int) (System.currentTimeMillis() - start);
             log.error("LLM调用失败: {} - {}", llm.getName(), e.getMessage());
             return new AgentResponse("", 0, latencyMs, bodyStr, e.getMessage());
         }
     }
+
+    /**
+     * 向 LLM 发送评测请求（单轮题目入口）。
+     */
+    public AgentResponse sendToLLM(LLM llm, Question question) {
+        return executeLLM(llm, buildMessages(question));
+    }
+
+    // ==================== LLM 多轮迭代 ====================
+
+    /**
+     * LLM 多轮迭代评测 — 逐轮发送 user 消息，用实际回答构建上下文。
+     *
+     * @param llm      LLM 实体
+     * @param question 多轮题目
+     * @return 每轮一个 AgentResponse
+     */
+    public List<AgentResponse> sendMultiTurnToLLM(LLM llm, Question question) {
+        List<Turn> userTurns = getUserTurns(question);
+        List<AgentResponse> results = new ArrayList<>();
+        List<Map<String, String>> history = new ArrayList<>();
+
+        for (int i = 0; i < userTurns.size(); i++) {
+            Turn turn = userTurns.get(i);
+
+            Map<String, String> userMsg = new LinkedHashMap<>();
+            userMsg.put("role", "user");
+            userMsg.put("content", turn.getContent());
+            history.add(userMsg);
+
+            AgentResponse resp = executeLLM(llm, new ArrayList<>(history));
+            results.add(resp);
+
+            Map<String, String> assistantMsg = new LinkedHashMap<>();
+            assistantMsg.put("role", "assistant");
+            assistantMsg.put("content", resp.content);
+            history.add(assistantMsg);
+
+            log.info("LLM多轮评测 turn={}/{} llm={} latency={}ms",
+                    i + 1, userTurns.size(), llm.getName(), resp.latencyMs);
+        }
+        return results;
+    }
+
+    // ==================== 响应解析 ====================
 
     /** LLM 用解析 — 固定标准 OpenAI 路径 */
     private AgentResponse parseResponse(ClientHttpResponse response,
@@ -163,7 +249,6 @@ public class AgentHttpClient {
             }
 
             if (isSSE) {
-                // SSE 流式 — 逐行读取 data: 事件
                 StringBuilder contentBuf = new StringBuilder();
                 for (String line; (line = reader.readLine()) != null; ) {
                     if (rawResponse.length() < 2000) rawResponse.append(line).append("\n");
@@ -173,7 +258,6 @@ public class AgentHttpClient {
                             Map<String, Object> chunk = objectMapper.readValue(json, Map.class);
                             String delta = extractByPath(chunk, "choices[0].delta.content");
                             if (delta != null) contentBuf.append(delta);
-                            // 最后一块可能带 usage
                             Map<String, Object> usage = (Map<String, Object>) chunk.get("usage");
                             if (usage != null) {
                                 tokensUsed = ((Number) usage.getOrDefault("total_tokens", 0)).intValue();
@@ -183,7 +267,6 @@ public class AgentHttpClient {
                 }
                 content = contentBuf.toString();
             } else {
-                // 普通 JSON — 整段读取后按路径提取
                 StringBuilder jsonBuf = new StringBuilder();
                 for (String line; (line = reader.readLine()) != null; ) {
                     rawResponse.append(line).append("\n");
@@ -203,6 +286,8 @@ public class AgentHttpClient {
                 rawResponse.toString().trim());
     }
 
+    // ==================== 构造请求 ====================
+
     /** 构造请求体 — 使用模板或默认 OpenAI 格式 */
     private String buildRequestBody(Agent agent, List<Map<String, String>> messages) {
         try {
@@ -216,15 +301,20 @@ public class AgentHttpClient {
         }
     }
 
-    /** 组装 messages 数组 — 单轮取 title，多轮取 turns */
+    /**
+     * 组装 messages 数组 — 单轮取 title，多轮取 turns。
+     * 多轮场景仅发送 role=user 的消息，预填的 assistant 期望回答不发给被测模型。
+     */
     private List<Map<String, String>> buildMessages(Question question) {
         List<Map<String, String>> messages = new ArrayList<>();
         if ("multi".equals(question.getQuestionType()) && question.getTurns() != null) {
             for (Turn turn : question.getTurns()) {
-                Map<String, String> msg = new LinkedHashMap<>();
-                msg.put("role", turn.getRole());
-                msg.put("content", turn.getContent());
-                messages.add(msg);
+                if (!"assistant".equalsIgnoreCase(turn.getRole())) {
+                    Map<String, String> msg = new LinkedHashMap<>();
+                    msg.put("role", turn.getRole());
+                    msg.put("content", turn.getContent());
+                    messages.add(msg);
+                }
             }
         } else {
             Map<String, String> msg = new LinkedHashMap<>();
@@ -233,6 +323,19 @@ public class AgentHttpClient {
             messages.add(msg);
         }
         return messages;
+    }
+
+    /**
+     * 获取多轮题目中的 user 消息列表（过滤 assistant）。
+     * 返回空列表表示非多轮题目。
+     */
+    private List<Turn> getUserTurns(Question question) {
+        if (!"multi".equals(question.getQuestionType()) || question.getTurns() == null) {
+            return List.of();
+        }
+        return question.getTurns().stream()
+                .filter(t -> !"assistant".equalsIgnoreCase(t.getRole()))
+                .collect(Collectors.toList());
     }
 
     /** 按路径从 JSON Map 中提取值。格式: choices[0].delta.content */

@@ -25,6 +25,8 @@ import com.agenttest.service.EvaluationService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -55,6 +57,7 @@ public class EvaluationServiceImpl implements EvaluationService {
     private final QuestionMapper questionMapper;
     private final AgentHttpClient httpClient;
     private final JudgeService judgeService;
+    private final ObjectMapper objectMapper;
 
     /** 构造器注入 */
     public EvaluationServiceImpl(EvaluationTaskMapper taskMapper,
@@ -63,7 +66,8 @@ public class EvaluationServiceImpl implements EvaluationService {
                                   LLMMapper llmMapper,
                                   QuestionMapper questionMapper,
                                   AgentHttpClient httpClient,
-                                  JudgeService judgeService) {
+                                  JudgeService judgeService,
+                                  ObjectMapper objectMapper) {
         this.taskMapper = taskMapper;
         this.resultMapper = resultMapper;
         this.agentMapper = agentMapper;
@@ -71,6 +75,7 @@ public class EvaluationServiceImpl implements EvaluationService {
         this.questionMapper = questionMapper;
         this.httpClient = httpClient;
         this.judgeService = judgeService;
+        this.objectMapper = objectMapper;
     }
 
     /** 运行中任务的取消标志位，key=taskId, value=true=取消 */
@@ -117,7 +122,19 @@ public class EvaluationServiceImpl implements EvaluationService {
         task.setDimensions(dto.getDimensions());
         int targetCount = dto.getAgentIds().size()
                 + (dto.getLlmIds() != null ? dto.getLlmIds().size() : 0);
-        task.setQuestionCount(dto.getQuestionIds().size() * targetCount);
+
+        // 多轮题目的 questionCount 按 user 消息数计算，每条 user 消息 = 一轮评测
+        int totalTurnCount = 0;
+        for (Long qid : dto.getQuestionIds()) {
+            Question q = questionMapper.selectById(qid);
+            if (q != null && "multi".equals(q.getQuestionType()) && q.getTurns() != null) {
+                totalTurnCount += (int) q.getTurns().stream()
+                        .filter(t -> !"assistant".equalsIgnoreCase(t.getRole())).count();
+            } else {
+                totalTurnCount += 1;
+            }
+        }
+        task.setQuestionCount(totalTurnCount * targetCount);
         task.setCompletedCount(0);
         task.setStatus("pending");
         task.setRun(1);
@@ -268,54 +285,70 @@ public class EvaluationServiceImpl implements EvaluationService {
                 futures.add(CompletableFuture.runAsync(() -> {
                     if (Boolean.TRUE.equals(cancelFlags.get(taskId))) return;
                     try {
-                        AgentResponse resp = httpClient.send(agent, question);
+                        // 多轮题目逐轮发送，单轮一次发送
+                        List<AgentResponse> responses = isMultiTurn(question)
+                                ? httpClient.sendMultiTurn(agent, question)
+                                : List.of(httpClient.send(agent, question));
 
-                        JudgeRequest judgeReq = new JudgeRequest();
-                        judgeReq.setQuestion(question.getTitle());
-                        judgeReq.setExpectedAnswer(question.getExpectedAnswer());
-                        judgeReq.setAgentResponse(resp.content);
-                        judgeReq.setCriteria(agent.getDescription());
-                        judgeReq.setDimensions(dimDesc);
-                        JudgeVerdict verdict = judgeService.evaluate(judgeReq);
+                        int created = 0;
+                        for (int turnIdx = 0; turnIdx < responses.size(); turnIdx++) {
+                            AgentResponse resp = responses.get(turnIdx);
+                            if (Boolean.TRUE.equals(cancelFlags.get(taskId))) break;
 
-                        List<DimensionScore> dimensionScores = verdict.dimensions().stream()
-                                .map(dv -> {
-                                    DimensionScore ds = new DimensionScore();
-                                    ds.setDimensionName(dv.name());
-                                    ds.setScore(dv.score());
-                                    ds.setFeedback(dv.feedback());
-                                    return ds;
-                                }).collect(Collectors.toList());
-                        double overall = verdict.overall();
+                            JudgeRequest judgeReq = new JudgeRequest();
+                            judgeReq.setQuestion(question.getTitle());
+                            judgeReq.setExpectedAnswer(question.getExpectedAnswer());
+                            judgeReq.setAgentResponse(resp.content);
+                            judgeReq.setCriteria(agent.getDescription());
+                            judgeReq.setDimensions(dimDesc);
+                            JudgeVerdict verdict = judgeService.evaluate(judgeReq);
 
-                        double avgThreshold = dimensions.stream()
-                                .mapToDouble(DimensionConfig::getThreshold)
-                                .average().orElse(0.5);
-                        boolean passed = overall >= avgThreshold;
+                            List<DimensionScore> dimensionScores = verdict.dimensions().stream()
+                                    .map(dv -> {
+                                        DimensionScore ds = new DimensionScore();
+                                        ds.setDimensionName(dv.name());
+                                        ds.setScore(dv.score());
+                                        ds.setFeedback(dv.feedback());
+                                        return ds;
+                                    }).collect(Collectors.toList());
+                            double overall = verdict.overall();
 
-                        EvaluationResult result = new EvaluationResult();
-                        result.setTaskId(taskId);
-                        result.setAgentId(agentId);
-                        result.setQuestionId(questionId);
-                        result.setOverallScore(overall);
-                        result.setRun(task.getRun());
-                        result.setPassed(passed);
-                        result.setLatencyMs(resp.latencyMs);
-                        result.setTokensUsed(resp.tokensUsed);
-                        result.setDimensionScores(dimensionScores);
-                        result.setRawRequest(resp.rawRequest);
-                        result.setAgentResponse(resp.content);
-                        result.setRawResponse(resp.rawResponse);
-                        resultMapper.insert(result);
+                            double avgThreshold = dimensions.stream()
+                                    .mapToDouble(DimensionConfig::getThreshold)
+                                    .average().orElse(0.5);
+                            boolean passed = overall >= avgThreshold;
 
-                        // 线程安全更新进度
-                        EvaluationTask latest = taskMapper.selectById(taskId);
-                        if (latest != null) {
-                            latest.setCompletedCount((latest.getCompletedCount() == null
-                                    ? 0 : latest.getCompletedCount()) + 1);
-                            taskMapper.updateById(latest);
+                            EvaluationResult result = new EvaluationResult();
+                            result.setTaskId(taskId);
+                            result.setAgentId(agentId);
+                            result.setQuestionId(questionId);
+                            result.setOverallScore(overall);
+                            result.setRun(task.getRun());
+                            result.setPassed(passed);
+                            result.setLatencyMs(resp.latencyMs);
+                            result.setTokensUsed(resp.tokensUsed);
+                            result.setDimensionScores(dimensionScores);
+                            result.setRawRequest(parseJsonSafely(resp.rawRequest));
+                            result.setAgentResponse(resp.content);
+                            result.setRawResponse(resp.rawResponse);
+                            // 多轮标轮次序号，单轮为 null
+                            result.setTurnOrder(isMultiTurn(question) ? turnIdx + 1 : null);
+                            resultMapper.insert(result);
+                            created++;
                         }
-                        log.info("评测完成: task={} agent={} question={} score={}", taskId, agentId, questionId, overall);
+
+                        // 线程安全更新进度（多轮会一次加多个）
+                        if (created > 0) {
+                            EvaluationTask latest = taskMapper.selectById(taskId);
+                            if (latest != null) {
+                                latest.setCompletedCount((latest.getCompletedCount() == null
+                                        ? 0 : latest.getCompletedCount()) + created);
+                                taskMapper.updateById(latest);
+                            }
+                        }
+                        log.info("评测完成: task={} agent={} question={} turns={} score={}",
+                                taskId, agentId, questionId, responses.size(),
+                                responses.stream().mapToInt(r -> (int)(r.content.length() > 0 ? 1 : 0)).average().orElse(0));
                     } catch (Exception e) {
                         log.error("评测失败: task={} agent={} question={} error={}", taskId, agentId, questionId, e.getMessage());
                     }
@@ -335,53 +368,66 @@ public class EvaluationServiceImpl implements EvaluationService {
                 futures.add(CompletableFuture.runAsync(() -> {
                     if (Boolean.TRUE.equals(cancelFlags.get(taskId))) return;
                     try {
-                        AgentResponse resp = httpClient.sendToLLM(llm, question);
+                        List<AgentResponse> responses = isMultiTurn(question)
+                                ? httpClient.sendMultiTurnToLLM(llm, question)
+                                : List.of(httpClient.sendToLLM(llm, question));
 
-                        JudgeRequest judgeReq = new JudgeRequest();
-                        judgeReq.setQuestion(question.getTitle());
-                        judgeReq.setExpectedAnswer(question.getExpectedAnswer());
-                        judgeReq.setAgentResponse(resp.content);
-                        judgeReq.setCriteria("LLM模型 " + llm.getName());
-                        judgeReq.setDimensions(dimDesc);
-                        JudgeVerdict verdict = judgeService.evaluate(judgeReq);
+                        int created = 0;
+                        for (int turnIdx = 0; turnIdx < responses.size(); turnIdx++) {
+                            AgentResponse resp = responses.get(turnIdx);
+                            if (Boolean.TRUE.equals(cancelFlags.get(taskId))) break;
 
-                        List<DimensionScore> dimensionScores = verdict.dimensions().stream()
-                                .map(dv -> {
-                                    DimensionScore ds = new DimensionScore();
-                                    ds.setDimensionName(dv.name());
-                                    ds.setScore(dv.score());
-                                    ds.setFeedback(dv.feedback());
-                                    return ds;
-                                }).collect(Collectors.toList());
-                        double overall = verdict.overall();
+                            JudgeRequest judgeReq = new JudgeRequest();
+                            judgeReq.setQuestion(question.getTitle());
+                            judgeReq.setExpectedAnswer(question.getExpectedAnswer());
+                            judgeReq.setAgentResponse(resp.content);
+                            judgeReq.setCriteria("LLM模型 " + llm.getName());
+                            judgeReq.setDimensions(dimDesc);
+                            JudgeVerdict verdict = judgeService.evaluate(judgeReq);
 
-                        double avgThreshold = dimensions.stream()
-                                .mapToDouble(DimensionConfig::getThreshold)
-                                .average().orElse(0.5);
-                        boolean passed = overall >= avgThreshold;
+                            List<DimensionScore> dimensionScores = verdict.dimensions().stream()
+                                    .map(dv -> {
+                                        DimensionScore ds = new DimensionScore();
+                                        ds.setDimensionName(dv.name());
+                                        ds.setScore(dv.score());
+                                        ds.setFeedback(dv.feedback());
+                                        return ds;
+                                    }).collect(Collectors.toList());
+                            double overall = verdict.overall();
 
-                        EvaluationResult result = new EvaluationResult();
-                        result.setTaskId(taskId);
-                        result.setLlmId(llmId);
-                        result.setQuestionId(questionId);
-                        result.setOverallScore(overall);
-                        result.setRun(task.getRun());
-                        result.setPassed(passed);
-                        result.setLatencyMs(resp.latencyMs);
-                        result.setTokensUsed(resp.tokensUsed);
-                        result.setDimensionScores(dimensionScores);
-                        result.setRawRequest(resp.rawRequest);
-                        result.setAgentResponse(resp.content);
-                        result.setRawResponse(resp.rawResponse);
-                        resultMapper.insert(result);
+                            double avgThreshold = dimensions.stream()
+                                    .mapToDouble(DimensionConfig::getThreshold)
+                                    .average().orElse(0.5);
+                            boolean passed = overall >= avgThreshold;
 
-                        EvaluationTask latest = taskMapper.selectById(taskId);
-                        if (latest != null) {
-                            latest.setCompletedCount((latest.getCompletedCount() == null
-                                    ? 0 : latest.getCompletedCount()) + 1);
-                            taskMapper.updateById(latest);
+                            EvaluationResult result = new EvaluationResult();
+                            result.setTaskId(taskId);
+                            result.setLlmId(llmId);
+                            result.setQuestionId(questionId);
+                            result.setOverallScore(overall);
+                            result.setRun(task.getRun());
+                            result.setPassed(passed);
+                            result.setLatencyMs(resp.latencyMs);
+                            result.setTokensUsed(resp.tokensUsed);
+                            result.setDimensionScores(dimensionScores);
+                            result.setRawRequest(parseJsonSafely(resp.rawRequest));
+                            result.setAgentResponse(resp.content);
+                            result.setRawResponse(resp.rawResponse);
+                            result.setTurnOrder(isMultiTurn(question) ? turnIdx + 1 : null);
+                            resultMapper.insert(result);
+                            created++;
                         }
-                        log.info("评测完成: task={} llm={} question={} score={}", taskId, llmId, questionId, overall);
+
+                        if (created > 0) {
+                            EvaluationTask latest = taskMapper.selectById(taskId);
+                            if (latest != null) {
+                                latest.setCompletedCount((latest.getCompletedCount() == null
+                                        ? 0 : latest.getCompletedCount()) + created);
+                                taskMapper.updateById(latest);
+                            }
+                        }
+                        log.info("评测完成: task={} llm={} question={} turns={}",
+                                taskId, llmId, questionId, responses.size());
                     } catch (Exception e) {
                         log.error("评测失败: task={} llm={} question={} error={}", taskId, llmId, questionId, e.getMessage());
                     }
@@ -506,6 +552,7 @@ public class EvaluationServiceImpl implements EvaluationService {
         AgentResultVO.ResultItemVO item = new AgentResultVO.ResultItemVO();
         item.setQuestionId(r.getQuestionId());
         item.setQuestionTitle(question != null ? question.getTitle() : "未知题目");
+        item.setTurnOrder(r.getTurnOrder());
         item.setScore(r.getOverallScore());
         item.setPassed(r.getPassed());
         item.setLatencyMs(r.getLatencyMs());
@@ -534,6 +581,35 @@ public class EvaluationServiceImpl implements EvaluationService {
             throw new BusinessException(404, "评测任务不存在");
         }
         return task;
+    }
+
+    /**
+     * 安全解析 JSON 字符串为 Object，避免 JacksonTypeHandler 双重序列化。
+     * 【Java 类比】≈ ObjectMapper.readValue(str, Object.class)，解析失败时返回原字符串兜底
+     *
+     * @param jsonStr JSON 字符串
+     * @return 解析后的 Map/List，或解析失败时返回原字符串
+     */
+    private Object parseJsonSafely(String jsonStr) {
+        if (jsonStr == null || jsonStr.isBlank()) return null;
+        try {
+            if (jsonStr.trim().startsWith("{")) {
+                return objectMapper.readValue(jsonStr, new TypeReference<Map<String, Object>>() {});
+            } else if (jsonStr.trim().startsWith("[")) {
+                return objectMapper.readValue(jsonStr, new TypeReference<List<Object>>() {});
+            }
+        } catch (Exception e) {
+            log.warn("rawRequest JSON 解析失败，保留原字符串存储: {}", e.getMessage());
+        }
+        return jsonStr; // 解析失败兜底：保留原字符串
+    }
+
+    /**
+     * 判断题目是否为多轮（有 turns 数据且类型为 multi）。
+     * 单轮题目返回 false，避免逐个判断分散在各处。
+     */
+    private boolean isMultiTurn(Question q) {
+        return "multi".equals(q.getQuestionType()) && q.getTurns() != null && !q.getTurns().isEmpty();
     }
 
     /** entity → VO */

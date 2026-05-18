@@ -39,6 +39,12 @@ public class EvaluationResult {
     /** 所属批次号，对应 evaluation_task.run */
     private Integer run;
 
+    /**
+     * 多轮对话轮次序号（1-based），单轮题目为 null。
+     * 一条多轮题目会产生多条结果记录，按 turnOrder 区分。
+     */
+    private Integer turnOrder;
+
     /** 综合加权得分（0~1），由各维度得分按权重计算 */
     private Double overallScore;
 
