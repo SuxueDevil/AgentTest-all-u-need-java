@@ -3,11 +3,7 @@ package com.agenttest.service.impl;
 import cn.hutool.core.bean.BeanUtil;
 import com.agenttest.common.PageResult;
 import com.agenttest.common.exception.BusinessException;
-import com.agenttest.engine.AgentHttpClient;
-import com.agenttest.engine.AgentHttpClient.AgentResponse;
-import com.agenttest.pojo.dto.JudgeRequest;
-import com.agenttest.pojo.vo.JudgeVerdict;
-import com.agenttest.service.JudgeService;
+import com.agenttest.engine.EvaluationEngine;
 import com.agenttest.mapper.AgentMapper;
 import com.agenttest.mapper.LLMMapper;
 import com.agenttest.mapper.EvaluationResultMapper;
@@ -25,25 +21,23 @@ import com.agenttest.service.EvaluationService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 /**
- * 评测任务业务实现 — CRUD + 异步执行 + 进度轮询 + 结果聚合。
+ * 评测任务业务实现 — CRUD + 结果聚合。
  * <p>
- * start() 触发异步评测，cancel() 通过标志位中断。
- * progress() 返回任务级状态和计数值，供前端 3s 轮询。
- * getResults() 按 Agent 分组聚合所有单题结果。
+ * 执行逻辑已抽离到 {@link EvaluationEngine}，
+ * start() 将任务异步提交给 Engine 后立即返回，不阻塞 Controller。
+ * cancel() 通知 Engine 设置取消标志，运行中的轮次检测后中断。
  */
 @Service
 public class EvaluationServiceImpl implements EvaluationService {
@@ -55,9 +49,8 @@ public class EvaluationServiceImpl implements EvaluationService {
     private final AgentMapper agentMapper;
     private final LLMMapper llmMapper;
     private final QuestionMapper questionMapper;
-    private final AgentHttpClient httpClient;
-    private final JudgeService judgeService;
-    private final ObjectMapper objectMapper;
+    private final EvaluationEngine engine;
+    private final Executor executor;
 
     /** 构造器注入 */
     public EvaluationServiceImpl(EvaluationTaskMapper taskMapper,
@@ -65,21 +58,16 @@ public class EvaluationServiceImpl implements EvaluationService {
                                   AgentMapper agentMapper,
                                   LLMMapper llmMapper,
                                   QuestionMapper questionMapper,
-                                  AgentHttpClient httpClient,
-                                  JudgeService judgeService,
-                                  ObjectMapper objectMapper) {
+                                  EvaluationEngine engine,
+                                  @Qualifier("evaluationExecutor") Executor executor) {
         this.taskMapper = taskMapper;
         this.resultMapper = resultMapper;
         this.agentMapper = agentMapper;
         this.llmMapper = llmMapper;
         this.questionMapper = questionMapper;
-        this.httpClient = httpClient;
-        this.judgeService = judgeService;
-        this.objectMapper = objectMapper;
+        this.engine = engine;
+        this.executor = executor;
     }
-
-    /** 运行中任务的取消标志位，key=taskId, value=true=取消 */
-    private final Map<Long, Boolean> cancelFlags = new ConcurrentHashMap<>();
 
     // ==================== CRUD ====================
 
@@ -181,12 +169,12 @@ public class EvaluationServiceImpl implements EvaluationService {
         task.setStartedAt(LocalDateTime.now());
         taskMapper.updateById(task);
 
-        cancelFlags.remove(id);
+        engine.clearCancelFlag(id);
         log.info("评测任务启动，id={} questions={} agents={}", id,
                 task.getQuestionIds().size(), task.getAgentIds().size());
 
-        // 异步执行，不阻塞 Controller 返回
-        executeAsync(id);
+        // 异步提交给 Engine，不阻塞 Controller 返回
+        CompletableFuture.runAsync(() -> engine.execute(id), executor);
     }
 
     @Override
@@ -211,7 +199,8 @@ public class EvaluationServiceImpl implements EvaluationService {
         if (!"running".equals(task.getStatus())) {
             throw new BusinessException(400, "仅 running 状态的任务可以取消");
         }
-        cancelFlags.put(id, true);
+        // 通知 Engine 设置取消标志，运行中的轮次检测后中断
+        engine.cancel(id);
         task.setStatus("cancelled");
         task.setCompletedAt(LocalDateTime.now());
         taskMapper.updateById(task);
@@ -240,204 +229,6 @@ public class EvaluationServiceImpl implements EvaluationService {
 
         log.info("获取评测结果，taskId={} 共 {} 条记录", id, allResults.size());
         return aggregateByTarget(task, allResults);
-    }
-
-    // ==================== 异步执行 ====================
-
-    /**
-     * 异步执行评测 — 并行遍历 agentIds × questionIds，调用 Agent 并 Judge 评分。
-     * 使用 CompletableFuture 并行执行，线程池大小为 4，同时跑 4 组 Agent×题目。
-     * 取消标志位为 true 时跳过未开始的任务。
-     */
-    @Async("evaluationExecutor")
-    public void executeAsync(Long taskId) {
-        EvaluationTask task = taskMapper.selectById(taskId);
-        if (task == null) return;
-
-        List<Long> questionIds = task.getQuestionIds();
-        List<Long> agentIds = task.getAgentIds();
-        List<DimensionConfig> dimensions = task.getDimensions();
-
-        // 预加载 Agent/LLM/Question，避免并行时重复查库
-        List<Long> llmIds = task.getLlmIds() != null ? task.getLlmIds() : List.of();
-        Map<Long, Agent> agentMap = new HashMap<>();
-        Map<Long, LLM> llmMap = new HashMap<>();
-        Map<Long, Question> questionMap = new HashMap<>();
-        for (Long aid : agentIds) agentMap.put(aid, agentMapper.selectById(aid));
-        for (Long lid : llmIds) llmMap.put(lid, llmMapper.selectById(lid));
-        for (Long qid : questionIds) questionMap.put(qid, questionMapper.selectById(qid));
-
-        // 构建维度说明 Map
-        Map<String, String> dimDesc = dimensions.stream().collect(
-                Collectors.toMap(DimensionConfig::getName,
-                        d -> d.getDisplayName() + "(权重" + d.getWeight() + ",阈值" + d.getThreshold() + ")"));
-
-        // 并行执行所有 Agent×Question 对
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
-        for (Long agentId : agentIds) {
-            for (Long questionId : questionIds) {
-                if (Boolean.TRUE.equals(cancelFlags.get(taskId))) break;
-                Agent agent = agentMap.get(agentId);
-                Question question = questionMap.get(questionId);
-                if (agent == null || question == null
-                        || agent.getEndpointUrl() == null) continue;
-
-                futures.add(CompletableFuture.runAsync(() -> {
-                    if (Boolean.TRUE.equals(cancelFlags.get(taskId))) return;
-                    try {
-                        // 多轮题目逐轮发送，单轮一次发送
-                        List<AgentResponse> responses = isMultiTurn(question)
-                                ? httpClient.sendMultiTurn(agent, question)
-                                : List.of(httpClient.send(agent, question));
-
-                        for (int turnIdx = 0; turnIdx < responses.size(); turnIdx++) {
-                            AgentResponse resp = responses.get(turnIdx);
-                            if (Boolean.TRUE.equals(cancelFlags.get(taskId))) break;
-
-                            JudgeRequest judgeReq = new JudgeRequest();
-                            judgeReq.setQuestion(question.getTitle());
-                            judgeReq.setExpectedAnswer(question.getExpectedAnswer());
-                            judgeReq.setAgentResponse(resp.content);
-                            judgeReq.setCriteria(agent.getDescription());
-                            judgeReq.setDimensions(dimDesc);
-                            JudgeVerdict verdict = judgeService.evaluate(judgeReq);
-
-                            List<DimensionScore> dimensionScores = verdict.dimensions().stream()
-                                    .map(dv -> {
-                                        DimensionScore ds = new DimensionScore();
-                                        ds.setDimensionName(dv.name());
-                                        ds.setScore(dv.score());
-                                        ds.setFeedback(dv.feedback());
-                                        return ds;
-                                    }).collect(Collectors.toList());
-                            double overall = verdict.overall();
-
-                            double avgThreshold = dimensions.stream()
-                                    .mapToDouble(DimensionConfig::getThreshold)
-                                    .average().orElse(0.5);
-                            boolean passed = overall >= avgThreshold;
-
-                            EvaluationResult result = new EvaluationResult();
-                            result.setTaskId(taskId);
-                            result.setAgentId(agentId);
-                            result.setQuestionId(questionId);
-                            result.setOverallScore(overall);
-                            result.setRun(task.getRun());
-                            result.setPassed(passed);
-                            result.setLatencyMs(resp.latencyMs);
-                            result.setTokensUsed(resp.tokensUsed);
-                            result.setDimensionScores(dimensionScores);
-                            result.setRawRequest(parseJsonSafely(resp.rawRequest));
-                            result.setAgentResponse(resp.content);
-                            result.setRawResponse(resp.rawResponse);
-                            // 多轮标轮次序号，单轮为 null
-                            result.setTurnOrder(isMultiTurn(question) ? turnIdx + 1 : null);
-                            resultMapper.insert(result);
-
-                            // 每完成一轮立刻 +1，前端 3s 轮询可看到进度逐步增长
-                            EvaluationTask latest = taskMapper.selectById(taskId);
-                            if (latest != null) {
-                                latest.setCompletedCount((latest.getCompletedCount() == null
-                                        ? 0 : latest.getCompletedCount()) + 1);
-                                taskMapper.updateById(latest);
-                            }
-                        }
-                        log.info("评测完成: task={} agent={} question={} turns={}",
-                                taskId, agentId, questionId, responses.size());
-                    } catch (Exception e) {
-                        log.error("评测失败: task={} agent={} question={} error={}", taskId, agentId, questionId, e.getMessage());
-                    }
-                }));
-            }
-        }
-
-        // LLM × Question 并行执行
-        for (Long llmId : llmIds) {
-            LLM llm = llmMap.get(llmId);
-            if (llm == null || llm.getEndpointUrl() == null) continue;
-            for (Long questionId : questionIds) {
-                if (Boolean.TRUE.equals(cancelFlags.get(taskId))) break;
-                Question question = questionMap.get(questionId);
-                if (question == null) continue;
-
-                futures.add(CompletableFuture.runAsync(() -> {
-                    if (Boolean.TRUE.equals(cancelFlags.get(taskId))) return;
-                    try {
-                        List<AgentResponse> responses = isMultiTurn(question)
-                                ? httpClient.sendMultiTurnToLLM(llm, question)
-                                : List.of(httpClient.sendToLLM(llm, question));
-
-                        for (int turnIdx = 0; turnIdx < responses.size(); turnIdx++) {
-                            AgentResponse resp = responses.get(turnIdx);
-                            if (Boolean.TRUE.equals(cancelFlags.get(taskId))) break;
-
-                            JudgeRequest judgeReq = new JudgeRequest();
-                            judgeReq.setQuestion(question.getTitle());
-                            judgeReq.setExpectedAnswer(question.getExpectedAnswer());
-                            judgeReq.setAgentResponse(resp.content);
-                            judgeReq.setCriteria("LLM模型 " + llm.getName());
-                            judgeReq.setDimensions(dimDesc);
-                            JudgeVerdict verdict = judgeService.evaluate(judgeReq);
-
-                            List<DimensionScore> dimensionScores = verdict.dimensions().stream()
-                                    .map(dv -> {
-                                        DimensionScore ds = new DimensionScore();
-                                        ds.setDimensionName(dv.name());
-                                        ds.setScore(dv.score());
-                                        ds.setFeedback(dv.feedback());
-                                        return ds;
-                                    }).collect(Collectors.toList());
-                            double overall = verdict.overall();
-
-                            double avgThreshold = dimensions.stream()
-                                    .mapToDouble(DimensionConfig::getThreshold)
-                                    .average().orElse(0.5);
-                            boolean passed = overall >= avgThreshold;
-
-                            EvaluationResult result = new EvaluationResult();
-                            result.setTaskId(taskId);
-                            result.setLlmId(llmId);
-                            result.setQuestionId(questionId);
-                            result.setOverallScore(overall);
-                            result.setRun(task.getRun());
-                            result.setPassed(passed);
-                            result.setLatencyMs(resp.latencyMs);
-                            result.setTokensUsed(resp.tokensUsed);
-                            result.setDimensionScores(dimensionScores);
-                            result.setRawRequest(parseJsonSafely(resp.rawRequest));
-                            result.setAgentResponse(resp.content);
-                            result.setRawResponse(resp.rawResponse);
-                            result.setTurnOrder(isMultiTurn(question) ? turnIdx + 1 : null);
-                            resultMapper.insert(result);
-
-                            // 每完成一轮立刻 +1
-                            EvaluationTask latest = taskMapper.selectById(taskId);
-                            if (latest != null) {
-                                latest.setCompletedCount((latest.getCompletedCount() == null
-                                        ? 0 : latest.getCompletedCount()) + 1);
-                                taskMapper.updateById(latest);
-                            }
-                        }
-                        log.info("评测完成: task={} llm={} question={} turns={}",
-                                taskId, llmId, questionId, responses.size());
-                    } catch (Exception e) {
-                        log.error("评测失败: task={} llm={} question={} error={}", taskId, llmId, questionId, e.getMessage());
-                    }
-                }));
-            }
-        }
-
-        // 等待全部完成
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-
-        cancelFlags.remove(taskId);
-        EvaluationTask latest = taskMapper.selectById(taskId);
-        if (latest != null && "running".equals(latest.getStatus())) {
-            latest.setStatus("completed");
-            latest.setCompletedAt(LocalDateTime.now());
-            taskMapper.updateById(latest);
-            log.info("评测任务全部完成，id={}", taskId);
-        }
     }
 
     // ==================== 结果聚合 ====================
@@ -550,7 +341,6 @@ public class EvaluationServiceImpl implements EvaluationService {
         item.setLatencyMs(r.getLatencyMs());
         item.setTokensUsed(r.getTokensUsed());
         // Agent 原文（截断前500字展示）
-        String raw = r.getRawResponse();
         String agentResp = r.getAgentResponse();
         item.setRawResponse(agentResp != null && agentResp.length() > 500
                 ? agentResp.substring(0, 500) + "…" : agentResp);
@@ -573,35 +363,6 @@ public class EvaluationServiceImpl implements EvaluationService {
             throw new BusinessException(404, "评测任务不存在");
         }
         return task;
-    }
-
-    /**
-     * 安全解析 JSON 字符串为 Object，避免 JacksonTypeHandler 双重序列化。
-     * 【Java 类比】≈ ObjectMapper.readValue(str, Object.class)，解析失败时返回原字符串兜底
-     *
-     * @param jsonStr JSON 字符串
-     * @return 解析后的 Map/List，或解析失败时返回原字符串
-     */
-    private Object parseJsonSafely(String jsonStr) {
-        if (jsonStr == null || jsonStr.isBlank()) return null;
-        try {
-            if (jsonStr.trim().startsWith("{")) {
-                return objectMapper.readValue(jsonStr, new TypeReference<Map<String, Object>>() {});
-            } else if (jsonStr.trim().startsWith("[")) {
-                return objectMapper.readValue(jsonStr, new TypeReference<List<Object>>() {});
-            }
-        } catch (Exception e) {
-            log.warn("rawRequest JSON 解析失败，保留原字符串存储: {}", e.getMessage());
-        }
-        return jsonStr; // 解析失败兜底：保留原字符串
-    }
-
-    /**
-     * 判断题目是否为多轮（有 turns 数据且类型为 multi）。
-     * 单轮题目返回 false，避免逐个判断分散在各处。
-     */
-    private boolean isMultiTurn(Question q) {
-        return "multi".equals(q.getQuestionType()) && q.getTurns() != null && !q.getTurns().isEmpty();
     }
 
     /** entity → VO */
