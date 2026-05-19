@@ -7,8 +7,8 @@ import java.time.LocalDateTime;
 /**
  * Agent 视图对象 — Controller 返回给前端的 Agent 数据。
  * <p>
- * 与 entity 的关键区别: <b>不含 authCredential 字段</b>，防止敏感凭证泄露到前端。
- * 其他字段与 entity 一致，由 Service 层通过 BeanUtil.copyProperties 从 entity 转换。
+ * 与 entity 字段一致，由 Service 层通过 BeanUtil.copyProperties 从 entity 转换。
+ * 编辑时前端需回显 authCredential，因此 VO 包含该字段（内部评测工具，非对外暴露）。
  */
 @Data
 public class AgentVO {
@@ -33,8 +33,10 @@ public class AgentVO {
     private String responseProtocol;
     /** 响应内容提取路径 */
     private String responseContentPath;
-    /** 鉴权方式（仅表示类型不含凭证值，authCredential 已在 VO 中排除） */
+    /** 鉴权方式 */
     private String authType;
+    /** 鉴权凭证 — 编辑时需回显，仅内部评测使用 */
+    private String authCredential;
     /** 创建时间 */
     private LocalDateTime createdAt;
     /** 更新时间 */
