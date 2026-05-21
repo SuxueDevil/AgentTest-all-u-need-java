@@ -6,6 +6,7 @@ import com.agenttest.mapper.LLMMapper;
 import com.agenttest.mapper.EvaluationResultMapper;
 import com.agenttest.mapper.EvaluationTaskMapper;
 import com.agenttest.mapper.QuestionMapper;
+import com.agenttest.pojo.dto.EvaluationResultSaveDTO;
 import com.agenttest.pojo.dto.JudgeRequest;
 import com.agenttest.pojo.entity.*;
 import com.agenttest.pojo.entity.EvaluationTask.DimensionConfig;
@@ -188,11 +189,18 @@ public class EvaluationEngine {
                 // 逐轮裁判 + 落库
                 for (int turnIdx = 0; turnIdx < responses.size(); turnIdx++) {
                     if (isCancelled(taskId)) break;
-                    saveResult(responses.get(turnIdx), taskId, run,
-                            agent.getId(), null,
-                            agent.getDescription(), question,
-                            dimensions, dimDesc,
-                            isMultiTurn(question) ? turnIdx + 1 : null);
+                    EvaluationResultSaveDTO saveDTO = new EvaluationResultSaveDTO();
+                    saveDTO.setResp(responses.get(turnIdx));
+                    saveDTO.setTaskId(taskId);
+                    saveDTO.setRun(run);
+                    saveDTO.setAgentId(agent.getId());
+                    saveDTO.setLlmId(null);
+                    saveDTO.setCriteria(agent.getDescription());
+                    saveDTO.setQuestion(question);
+                    saveDTO.setDimensions(dimensions);
+                    saveDTO.setDimDesc(dimDesc);
+                    saveDTO.setTurnOrder(isMultiTurn(question) ? turnIdx + 1 : null);
+                    saveResult(saveDTO);
                 }
 
                 log.info("评测完成: task={} agent={} question={} turns={}",
@@ -220,11 +228,18 @@ public class EvaluationEngine {
 
                 for (int turnIdx = 0; turnIdx < responses.size(); turnIdx++) {
                     if (isCancelled(taskId)) break;
-                    saveResult(responses.get(turnIdx), taskId, run,
-                            null, llm.getId(),
-                            "LLM模型 " + llm.getName(), question,
-                            dimensions, dimDesc,
-                            isMultiTurn(question) ? turnIdx + 1 : null);
+                    EvaluationResultSaveDTO saveDTO = new EvaluationResultSaveDTO();
+                    saveDTO.setResp(responses.get(turnIdx));
+                    saveDTO.setTaskId(taskId);
+                    saveDTO.setRun(run);
+                    saveDTO.setAgentId(null);
+                    saveDTO.setLlmId(llm.getId());
+                    saveDTO.setCriteria("LLM模型 " + llm.getName());
+                    saveDTO.setQuestion(question);
+                    saveDTO.setDimensions(dimensions);
+                    saveDTO.setDimDesc(dimDesc);
+                    saveDTO.setTurnOrder(isMultiTurn(question) ? turnIdx + 1 : null);
+                    saveResult(saveDTO);
                 }
 
                 log.info("评测完成: task={} llm={} question={} turns={}",
@@ -241,32 +256,18 @@ public class EvaluationEngine {
     /**
      * 裁判 + 构造 EvaluationResult + 写库 + 更新进度。
      * <p>
-     * Agent 和 LLM 共用此方法，通过 agentId/llmId 和 criteria 区分。
+     * Agent 和 LLM 共用此方法，通过 dto.agentId / dto.llmId 和 dto.criteria 区分。
      *
-     * @param resp       Agent/LLM 响应
-     * @param taskId     任务 ID
-     * @param run        批次号
-     * @param agentId    Agent ID（LLM 评测时为 null）
-     * @param llmId      LLM ID（Agent 评测时为 null）
-     * @param criteria   评测标准文本
-     * @param question   题目 entity
-     * @param dimensions 维度配置列表
-     * @param dimDesc    维度说明 Map
-     * @param turnOrder  轮次序号（多轮时 1-based，单轮时 null）
+     * @param dto 评测结果保存参数（resp / taskId / run / agentId / llmId / criteria / question / dimensions / dimDesc / turnOrder）
      */
-    private void saveResult(AgentResponse resp, Long taskId, int run,
-                            Long agentId, Long llmId,
-                            String criteria, Question question,
-                            List<DimensionConfig> dimensions,
-                            Map<String, String> dimDesc,
-                            Integer turnOrder) {
+    private void saveResult(EvaluationResultSaveDTO dto) {
         // 1. 调用 Judge 裁判
         JudgeRequest judgeReq = new JudgeRequest();
-        judgeReq.setQuestion(question.getTitle());
-        judgeReq.setExpectedAnswer(question.getExpectedAnswer());
-        judgeReq.setAgentResponse(resp.content);
-        judgeReq.setCriteria(criteria);
-        judgeReq.setDimensions(dimDesc);
+        judgeReq.setQuestion(dto.getQuestion().getTitle());
+        judgeReq.setExpectedAnswer(dto.getQuestion().getExpectedAnswer());
+        judgeReq.setAgentResponse(dto.getResp().content);
+        judgeReq.setCriteria(dto.getCriteria());
+        judgeReq.setDimensions(dto.getDimDesc());
         JudgeVerdict verdict = judgeService.evaluate(judgeReq);
 
         // 2. 维度得分转换
@@ -281,30 +282,30 @@ public class EvaluationEngine {
 
         // 3. 综合分 + 通过判定
         double overall = verdict.overall();
-        double avgThreshold = dimensions.stream()
+        double avgThreshold = dto.getDimensions().stream()
                 .mapToDouble(DimensionConfig::getThreshold)
                 .average().orElse(0.5);
 
         // 4. 构造结果实体
         EvaluationResult result = new EvaluationResult();
-        result.setTaskId(taskId);
-        result.setAgentId(agentId);
-        result.setLlmId(llmId);
-        result.setQuestionId(question.getId());
+        result.setTaskId(dto.getTaskId());
+        result.setAgentId(dto.getAgentId());
+        result.setLlmId(dto.getLlmId());
+        result.setQuestionId(dto.getQuestion().getId());
         result.setOverallScore(overall);
-        result.setRun(run);
+        result.setRun(dto.getRun());
         result.setPassed(overall >= avgThreshold);
-        result.setLatencyMs(resp.latencyMs);
-        result.setTokensUsed(resp.tokensUsed);
+        result.setLatencyMs(dto.getResp().latencyMs);
+        result.setTokensUsed(dto.getResp().tokensUsed);
         result.setDimensionScores(dimensionScores);
-        result.setRawRequest(parseJsonSafely(resp.rawRequest));
-        result.setAgentResponse(resp.content);
-        result.setRawResponse(resp.rawResponse);
-        result.setTurnOrder(turnOrder);
+        result.setRawRequest(parseJsonSafely(dto.getResp().rawRequest));
+        result.setAgentResponse(dto.getResp().content);
+        result.setRawResponse(dto.getResp().rawResponse);
+        result.setTurnOrder(dto.getTurnOrder());
         resultMapper.insert(result);
 
         // 5. 每完成一轮立刻 +1，前端 3s 轮询可看到进度逐步增长
-        EvaluationTask latest = taskMapper.selectById(taskId);
+        EvaluationTask latest = taskMapper.selectById(dto.getTaskId());
         if (latest != null) {
             latest.setCompletedCount((latest.getCompletedCount() == null ? 0 : latest.getCompletedCount()) + 1);
             taskMapper.updateById(latest);
