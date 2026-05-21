@@ -65,19 +65,15 @@ public class AgentServiceImpl implements AgentService {
      */
     @Override
     public PageResult<AgentVO> page(AgentQueryDTO query) {
-        // 构建动态查询条件
-        LambdaQueryWrapper<Agent> wrapper = new LambdaQueryWrapper<>();
-        if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
-            wrapper.and(w -> w.like(Agent::getName, query.getKeyword())
-                    .or().like(Agent::getDescription, query.getKeyword()));
-        }
-        if (query.getType() != null && !query.getType().isBlank()) {
-            wrapper.eq(Agent::getType, query.getType());
-        }
-        if (query.getStatus() != null && !query.getStatus().isBlank()) {
-            wrapper.eq(Agent::getStatus, query.getStatus());
-        }
-        wrapper.orderByDesc(Agent::getCreatedAt);
+        LambdaQueryWrapper<Agent> wrapper = new LambdaQueryWrapper<Agent>()
+                .and(query.getKeyword() != null && !query.getKeyword().isBlank(),
+                        w -> w.like(Agent::getName, query.getKeyword())
+                                .or().like(Agent::getDescription, query.getKeyword()))
+                .eq(query.getType() != null && !query.getType().isBlank(),
+                        Agent::getType, query.getType())
+                .eq(query.getStatus() != null && !query.getStatus().isBlank(),
+                        Agent::getStatus, query.getStatus())
+                .orderByDesc(Agent::getCreatedAt);
 
         // 执行分页查询
         IPage<Agent> page = agentMapper.selectPage(
