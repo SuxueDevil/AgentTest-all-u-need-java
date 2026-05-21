@@ -74,22 +74,16 @@ public class QuestionServiceImpl implements QuestionService {
      */
     @Override
     public PageResult<QuestionVO> page(QuestionQueryDTO query) {
-        LambdaQueryWrapper<Question> wrapper = new LambdaQueryWrapper<>();
-        // keyword 模糊搜索 title
-        if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
-            wrapper.like(Question::getTitle, query.getKeyword());
-        }
-        // 精确筛选
-        if (query.getCategory() != null && !query.getCategory().isBlank()) {
-            wrapper.eq(Question::getCategory, query.getCategory());
-        }
-        if (query.getDifficulty() != null && !query.getDifficulty().isBlank()) {
-            wrapper.eq(Question::getDifficulty, query.getDifficulty());
-        }
-        if (query.getQuestionType() != null && !query.getQuestionType().isBlank()) {
-            wrapper.eq(Question::getQuestionType, query.getQuestionType());
-        }
-        wrapper.orderByDesc(Question::getCreatedAt);
+        LambdaQueryWrapper<Question> wrapper = new LambdaQueryWrapper<Question>()
+                .like(query.getKeyword() != null && !query.getKeyword().isBlank(),
+                        Question::getTitle, query.getKeyword())
+                .eq(query.getCategory() != null && !query.getCategory().isBlank(),
+                        Question::getCategory, query.getCategory())
+                .eq(query.getDifficulty() != null && !query.getDifficulty().isBlank(),
+                        Question::getDifficulty, query.getDifficulty())
+                .eq(query.getQuestionType() != null && !query.getQuestionType().isBlank(),
+                        Question::getQuestionType, query.getQuestionType())
+                .orderByDesc(Question::getCreatedAt);
 
         IPage<Question> page = questionMapper.selectPage(
                 new Page<>(query.getPage(), query.getPageSize()), wrapper);
