@@ -39,11 +39,10 @@ public class LLMServiceImpl implements LLMService {
 
     @Override
     public PageResult<LLMVO> page(LLMQueryDTO query) {
-        LambdaQueryWrapper<LLM> wrapper = new LambdaQueryWrapper<>();
-        if (query.getKeyword() != null && !query.getKeyword().isBlank()) {
-            wrapper.like(LLM::getName, query.getKeyword());
-        }
-        wrapper.orderByDesc(LLM::getCreatedAt);
+        LambdaQueryWrapper<LLM> wrapper = new LambdaQueryWrapper<LLM>()
+                .like(query.getKeyword() != null && !query.getKeyword().isBlank(),
+                        LLM::getName, query.getKeyword())
+                .orderByDesc(LLM::getCreatedAt);
 
         IPage<LLM> page = llmMapper.selectPage(
                 new Page<>(query.getPage(), query.getPageSize()), wrapper);
