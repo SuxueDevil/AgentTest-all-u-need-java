@@ -73,11 +73,10 @@ public class EvaluationServiceImpl implements EvaluationService {
 
     @Override
     public PageResult<EvaluationTaskVO> page(EvaluationTaskQueryDTO query) {
-        LambdaQueryWrapper<EvaluationTask> wrapper = new LambdaQueryWrapper<>();
-        if (query.getStatus() != null && !query.getStatus().isBlank()) {
-            wrapper.eq(EvaluationTask::getStatus, query.getStatus());
-        }
-        wrapper.orderByDesc(EvaluationTask::getCreatedAt);
+        LambdaQueryWrapper<EvaluationTask> wrapper = new LambdaQueryWrapper<EvaluationTask>()
+                .eq(query.getStatus() != null && !query.getStatus().isBlank(),
+                        EvaluationTask::getStatus, query.getStatus())
+                .orderByDesc(EvaluationTask::getCreatedAt);
 
         IPage<EvaluationTask> page = taskMapper.selectPage(
                 new Page<>(query.getPage(), query.getPageSize()), wrapper);
