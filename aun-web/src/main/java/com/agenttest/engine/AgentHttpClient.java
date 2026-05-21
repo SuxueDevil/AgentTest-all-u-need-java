@@ -2,6 +2,7 @@ package com.agenttest.engine;
 
 import com.agenttest.pojo.entity.Agent;
 import com.agenttest.pojo.entity.LLM;
+import com.agenttest.enums.AuthType;
 import com.agenttest.pojo.entity.Question;
 import com.agenttest.pojo.entity.Question.Turn;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -361,24 +362,9 @@ public class AgentHttpClient {
         return current != null ? current.toString() : null;
     }
 
-    /** 根据 Agent 的 authType 向 HTTP 请求头注入鉴权信息 */
-    @SuppressWarnings("unchecked")
+    /** 根据 Agent 的 authType 向 HTTP 请求头注入鉴权信息，委托 {@link AuthType} 策略枚举处理 */
     private void applyAuth(HttpHeaders headers, Agent agent) {
-        if ("bearer".equalsIgnoreCase(agent.getAuthType())) {
-            headers.setBearerAuth(agent.getAuthCredential());
-        } else if ("api_key".equalsIgnoreCase(agent.getAuthType())) {
-            headers.set("X-API-Key", agent.getAuthCredential());
-        } else if ("basic".equalsIgnoreCase(agent.getAuthType())) {
-            headers.setBasicAuth(agent.getAuthCredential());
-        } else if ("custom".equalsIgnoreCase(agent.getAuthType())) {
-            try {
-                Map<String, String> headerMap = objectMapper.readValue(
-                        agent.getAuthCredential(), Map.class);
-                headerMap.forEach(headers::set);
-            } catch (Exception e) {
-                log.warn("自定义Header解析失败: {}", e.getMessage());
-            }
-        }
+        AuthType.from(agent.getAuthType()).apply(headers, agent.getAuthCredential());
     }
 
     /** Agent 响应封装 */

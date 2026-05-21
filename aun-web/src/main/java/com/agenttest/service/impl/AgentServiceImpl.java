@@ -20,10 +20,9 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.agenttest.enums.AuthType;
 
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -223,34 +222,13 @@ public class AgentServiceImpl implements AgentService {
     }
 
     /**
-     * 根据 Agent 的 authType 向 HTTP 请求头注入对应的鉴权信息。
-     * <ul>
-     *   <li>bearer  → Authorization: Bearer xxx</li>
-     *   <li>api_key → X-API-Key: xxx</li>
-     *   <li>basic   → Authorization: Basic base64(xxx)</li>
-     *   <li>custom  → 解析 authCredential JSON，逐个设为 Header</li>
-     *   <li>none / 其他 → 不添加鉴权头</li>
-     * </ul>
+     * 根据 Agent 的 authType 向 HTTP 请求头注入鉴权信息。
+     * 委托 {@link AuthType} 策略枚举处理，支持 bearer / api_key / basic / custom / none。
      *
      * @param headers HTTP 请求头（会被原地修改）
      * @param agent   Agent 实体，取其 authType 和 authCredential
      */
-    @SuppressWarnings("unchecked")
     private void applyAuth(HttpHeaders headers, Agent agent) {
-        if ("bearer".equalsIgnoreCase(agent.getAuthType())) {
-            headers.setBearerAuth(agent.getAuthCredential());
-        } else if ("api_key".equalsIgnoreCase(agent.getAuthType())) {
-            headers.set("X-API-Key", agent.getAuthCredential());
-        } else if ("basic".equalsIgnoreCase(agent.getAuthType())) {
-            headers.setBasicAuth(agent.getAuthCredential());
-        } else if ("custom".equalsIgnoreCase(agent.getAuthType())) {
-            try {
-                Map<String, String> headerMap = new ObjectMapper().readValue(
-                        agent.getAuthCredential(), Map.class);
-                headerMap.forEach(headers::set);
-            } catch (Exception e) {
-                log.warn("自定义Header解析失败: {}", e.getMessage());
-            }
-        }
+        AuthType.from(agent.getAuthType()).apply(headers, agent.getAuthCredential());
     }
 }
