@@ -33,11 +33,23 @@ import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 /**
- * 评测任务业务实现 — CRUD + 结果聚合。
+ * 评测任务业务实现 — CRUD + 执行控制 + 结果聚合。
  * <p>
- * 执行逻辑已抽离到 {@link EvaluationEngine}，
- * start() 将任务异步提交给 Engine 后立即返回，不阻塞 Controller。
- * cancel() 通知 Engine 设置取消标志，运行中的轮次检测后中断。
+ * 核心职责：
+ * <ul>
+ *   <li>评测任务 CRUD（创建/查询/更新/删除）</li>
+ *   <li>执行控制（启动/重新开始/取消/进度轮询）</li>
+ *   <li>结果聚合（按 Agent/LLM 分组，维度加权汇总）</li>
+ * </ul>
+ * 关键事务：
+ * <ul>
+ *   <li>start() 异步提交给 {@link EvaluationEngine}，不阻塞 Controller 返回</li>
+ *   <li>cancel() 通知 Engine 设置取消标志，运行中的轮次检测后中断</li>
+ *   <li>create() 根据 questionType 计算 questionCount：多轮按 user 消息数统计</li>
+ * </ul>
+ *
+ * @author MT
+ * @since 2026-05-21
  */
 @Service
 public class EvaluationServiceImpl implements EvaluationService {
@@ -71,6 +83,13 @@ public class EvaluationServiceImpl implements EvaluationService {
 
     // ==================== CRUD ====================
 
+    /**
+     * 分页查询评测任务列表。
+     * 支持按 status 字段精确筛选，按创建时间倒序排列。
+     *
+     * @param query 查询条件（status 可选）及分页参数（page / pageSize）
+     * @return 分页结果，含 EvaluationTaskVO 列表及 total / page / pageSize
+     */
     @Override
     public PageResult<EvaluationTaskVO> page(EvaluationTaskQueryDTO query) {
         LambdaQueryWrapper<EvaluationTask> wrapper = new LambdaQueryWrapper<EvaluationTask>()
@@ -89,12 +108,29 @@ public class EvaluationServiceImpl implements EvaluationService {
         return new PageResult<>(voList, page.getTotal(), query.getPage(), query.getPageSize());
     }
 
+    /**
+     * 查询评测任务详情。
+     *
+     * @param id 任务 ID
+     * @return 任务完整信息（含 questionIds / agentIds / dimensions）
+     * @throws BusinessException 当任务不存在时抛出，错误码 404
+     */
     @Override
     public EvaluationTaskVO getById(Long id) {
         log.info("查询评测任务详情，id={}", id);
         return toVO(getTaskEntity(id));
     }
 
+    /**
+     * 创建评测任务。
+     * <p>
+     * 根据题目类型计算 questionCount：多轮题按 user 消息数统计，单轮题计 1，
+     * 再乘以参评目标数（agent + LLM）得到总评测轮次。
+     * 初始状态为 pending，run 批次号为 1。
+     *
+     * @param dto 任务名称 + 题目列表 + Agent 列表 + 维度配置（name / questionIds / dimensions 必填）
+     * @return 创建后的任务（状态为 pending）
+     */
     @Override
     public EvaluationTaskVO create(EvaluationTaskCreateDTO dto) {
         log.info("创建评测任务，name={} questions={} agents={}", dto.getName(),
@@ -129,6 +165,15 @@ public class EvaluationServiceImpl implements EvaluationService {
         return toVO(task);
     }
 
+    /**
+     * 更新评测任务（仅允许修改 name 和 description）。
+     * 运行中的任务不可编辑。
+     *
+     * @param id  任务 ID
+     * @param dto 部分更新的字段（name / description 可选）
+     * @return 更新后的任务信息
+     * @throws BusinessException 当任务不存在或运行中时抛出，错误码 404 / 400
+     */
     @Override
     public EvaluationTaskVO update(Long id, EvaluationTaskUpdateDTO dto) {
         EvaluationTask task = getTaskEntity(id);
@@ -142,6 +187,13 @@ public class EvaluationServiceImpl implements EvaluationService {
         return toVO(task);
     }
 
+    /**
+     * 删除评测任务（含关联的所有评测结果）。
+     * 运行中的任务需先取消再删除。先删关联结果，再删任务本身。
+     *
+     * @param id 任务 ID
+     * @throws BusinessException 当任务不存在或运行中时抛出，错误码 404 / 400
+     */
     @Override
     public void delete(Long id) {
         EvaluationTask task = getTaskEntity(id);
@@ -158,6 +210,16 @@ public class EvaluationServiceImpl implements EvaluationService {
 
     // ==================== 执行控制 ====================
 
+    /**
+     * 启动评测 — 异步执行，立即返回。
+     * <p>
+     * 将任务状态置为 running，通过 CompletableFuture.runAsync 提交给 EvaluationEngine
+     * 异步执行，不阻塞 Controller 返回。Engine 内部并行遍历 agentIds × questionIds，
+     * 逐对调用 Agent/LLM → Judge 裁判 → 写库 → 更新进度。
+     *
+     * @param id 任务 ID
+     * @throws BusinessException 当任务不存在或非 pending 状态时抛出，错误码 404 / 400
+     */
     @Override
     public void start(Long id) {
         EvaluationTask task = getTaskEntity(id);
@@ -176,6 +238,14 @@ public class EvaluationServiceImpl implements EvaluationService {
         CompletableFuture.runAsync(() -> engine.execute(id), executor);
     }
 
+    /**
+     * 重新开始评测 — 重置状态为 pending 并清空进度，保留原有配置。
+     * <p>
+     * 不删除旧结果，递增 run 批次号，历史结果按 run 保留以供对比。
+     *
+     * @param id 任务 ID
+     * @throws BusinessException 当任务不存在或运行中时抛出，错误码 404 / 400
+     */
     @Override
     public void restart(Long id) {
         EvaluationTask task = getTaskEntity(id);
@@ -192,6 +262,15 @@ public class EvaluationServiceImpl implements EvaluationService {
         log.info("评测任务重新开始，id={} run={}", id, task.getRun());
     }
 
+    /**
+     * 取消评测 — 通知 Engine 设置取消标志位，运行中的轮次检测后中断。
+     * <p>
+     * 取消不立即生效，当前已发起的 HTTP 请求会等到返回后才检测标志位。
+     * 状态置为 cancelled 并记录完成时间。
+     *
+     * @param id 任务 ID
+     * @throws BusinessException 当任务不存在或非 running 状态时抛出，错误码 404 / 400
+     */
     @Override
     public void cancel(Long id) {
         EvaluationTask task = getTaskEntity(id);
@@ -206,6 +285,13 @@ public class EvaluationServiceImpl implements EvaluationService {
         log.info("评测任务已取消，id={}", id);
     }
 
+    /**
+     * 轮询任务进度 — 前端每 3s 调用一次，用于展示进度条。
+     *
+     * @param id 任务 ID
+     * @return { status, questionCount, completedCount }
+     * @throws BusinessException 当任务不存在时抛出，错误码 404
+     */
     @Override
     public TaskProgressVO getProgress(Long id) {
         EvaluationTask task = getTaskEntity(id);
@@ -213,6 +299,17 @@ public class EvaluationServiceImpl implements EvaluationService {
                 task.getCompletedCount());
     }
 
+    /**
+     * 查询评测结果 — 按 Agent / LLM 分组返回各维度得分和逐题明细。
+     * <p>
+     * 仅在任务状态为 completed 或 cancelled 时可查（pending 抛异常），
+     * running 状态下可查但结果可能不完整。
+     * 查询当前批次（run）的结果，历史批次需通过 run 参数指定。
+     *
+     * @param id 任务 ID
+     * @return 按 Agent / LLM 分组的评测结果列表
+     * @throws BusinessException 当任务不存在或 pending 状态时抛出，错误码 404 / 400
+     */
     @Override
     public List<AgentResultVO> getResults(Long id) {
         EvaluationTask task = getTaskEntity(id);
@@ -355,7 +452,13 @@ public class EvaluationServiceImpl implements EvaluationService {
 
     // ==================== 工具方法 ====================
 
-    /** 按 ID 查询任务 entity，不存在时抛 BusinessException(404) */
+    /**
+     * 按 ID 查询任务 entity，不存在时抛 BusinessException。
+     *
+     * @param id 任务 ID
+     * @return EvaluationTask 数据库实体
+     * @throws BusinessException 当任务不存在时抛出，错误码 404
+     */
     private EvaluationTask getTaskEntity(Long id) {
         EvaluationTask task = taskMapper.selectById(id);
         if (task == null) {
@@ -364,7 +467,9 @@ public class EvaluationServiceImpl implements EvaluationService {
         return task;
     }
 
-    /** entity → VO */
+    /**
+     * entity → VO 转换，使用 BeanUtil.copyProperties 自动复制同名字段。
+     */
     private EvaluationTaskVO toVO(EvaluationTask entity) {
         EvaluationTaskVO vo = new EvaluationTaskVO();
         BeanUtil.copyProperties(entity, vo);
