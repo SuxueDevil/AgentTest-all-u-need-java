@@ -17,6 +17,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
@@ -37,11 +38,11 @@ import java.util.stream.Collectors;
  * 线程池使用 evaluationExecutor（I/O 密集型，core=16 max=32 queue=200）。
  */
 @Component
+@RequiredArgsConstructor
 public class EvaluationEngine {
 
     private static final Logger log = LoggerFactory.getLogger(EvaluationEngine.class);
 
-    private final Executor executor;
     private final EvaluationTaskMapper taskMapper;
     private final EvaluationResultMapper resultMapper;
     private final AgentMapper agentMapper;
@@ -50,30 +51,11 @@ public class EvaluationEngine {
     private final AgentHttpClient httpClient;
     private final JudgeService judgeService;
     private final ObjectMapper objectMapper;
+    @Qualifier("evaluationExecutor")
+    private final Executor executor;
 
     /** 运行中任务的取消标志位，key=taskId, value=true=取消 */
     private final Map<Long, Boolean> cancelFlags = new ConcurrentHashMap<>();
-
-    /** 构造器注入 */
-    public EvaluationEngine(EvaluationTaskMapper taskMapper,
-                            EvaluationResultMapper resultMapper,
-                            AgentMapper agentMapper,
-                            LLMMapper llmMapper,
-                            QuestionMapper questionMapper,
-                            AgentHttpClient httpClient,
-                            JudgeService judgeService,
-                            ObjectMapper objectMapper,
-                            @Qualifier("evaluationExecutor") Executor executor) {
-        this.taskMapper = taskMapper;
-        this.resultMapper = resultMapper;
-        this.agentMapper = agentMapper;
-        this.llmMapper = llmMapper;
-        this.questionMapper = questionMapper;
-        this.httpClient = httpClient;
-        this.judgeService = judgeService;
-        this.objectMapper = objectMapper;
-        this.executor = executor;
-    }
 
     // ==================== 取消控制 ====================
 

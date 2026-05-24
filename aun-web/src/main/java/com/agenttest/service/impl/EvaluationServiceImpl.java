@@ -23,6 +23,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
@@ -52,6 +53,7 @@ import java.util.stream.Collectors;
  * @since 2026-05-21
  */
 @Service
+@RequiredArgsConstructor
 public class EvaluationServiceImpl implements EvaluationService {
 
     private static final Logger log = LoggerFactory.getLogger(EvaluationServiceImpl.class);
@@ -62,24 +64,8 @@ public class EvaluationServiceImpl implements EvaluationService {
     private final LLMMapper llmMapper;
     private final QuestionMapper questionMapper;
     private final EvaluationEngine engine;
+    @Qualifier("evaluationExecutor")
     private final Executor executor;
-
-    /** 构造器注入 */
-    public EvaluationServiceImpl(EvaluationTaskMapper taskMapper,
-                                  EvaluationResultMapper resultMapper,
-                                  AgentMapper agentMapper,
-                                  LLMMapper llmMapper,
-                                  QuestionMapper questionMapper,
-                                  EvaluationEngine engine,
-                                  @Qualifier("evaluationExecutor") Executor executor) {
-        this.taskMapper = taskMapper;
-        this.resultMapper = resultMapper;
-        this.agentMapper = agentMapper;
-        this.llmMapper = llmMapper;
-        this.questionMapper = questionMapper;
-        this.engine = engine;
-        this.executor = executor;
-    }
 
     // ==================== CRUD ====================
 

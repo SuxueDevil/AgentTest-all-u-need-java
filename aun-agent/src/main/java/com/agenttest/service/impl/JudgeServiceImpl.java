@@ -6,6 +6,7 @@ import com.agenttest.service.JudgeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import lombok.RequiredArgsConstructor;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.stereotype.Service;
 
@@ -20,18 +21,14 @@ import java.util.stream.Collectors;
  * temperature=0.1 保证评判一致性；调用失败时返回 score=0 + error feedback。
  */
 @Service
+@RequiredArgsConstructor
 public class JudgeServiceImpl implements JudgeService {
 
     private static final Logger log = LoggerFactory.getLogger(JudgeServiceImpl.class);
 
     private final ChatClient judgeClient;
-    private final BeanOutputConverter<JudgeVerdict> outputConverter;
-
-    /** 构造器注入 JudgeConfig 提供的 ChatClient Bean */
-    public JudgeServiceImpl(ChatClient judgeClient) {
-        this.judgeClient = judgeClient;
-        this.outputConverter = new BeanOutputConverter<>(JudgeVerdict.class);
-    }
+    /** LLM 结构化输出转换器，将 JSON 自动映射为 JudgeVerdict Record */
+    private final BeanOutputConverter<JudgeVerdict> outputConverter = new BeanOutputConverter<>(JudgeVerdict.class);
 
     /**
      * 调用 Judge LLM 进行多维度评分。

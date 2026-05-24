@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
 import org.springframework.http.client.ClientHttpResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -26,18 +27,13 @@ import java.util.stream.Collectors;
  * 自动识别响应类型：SSE 流式（data: 开头）或普通 JSON（{ 开头）。
  */
 @Component
+@RequiredArgsConstructor
 public class AgentHttpClient {
 
     private static final Logger log = LoggerFactory.getLogger(AgentHttpClient.class);
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
-
-    /** 构造器注入 */
-    public AgentHttpClient(RestTemplate restTemplate, ObjectMapper objectMapper) {
-        this.restTemplate = restTemplate;
-        this.objectMapper = objectMapper;
-    }
 
     // ==================== Agent 单轮 ====================
 

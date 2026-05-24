@@ -8,6 +8,7 @@ import com.agenttest.pojo.dto.LLMUpdateDTO;
 import com.agenttest.pojo.vo.LLMVO;
 import com.agenttest.service.LLMService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,13 +20,10 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/llms")
 @Validated
+@RequiredArgsConstructor
 public class LLMController {
 
     private final LLMService llmService;
-
-    public LLMController(LLMService llmService) {
-        this.llmService = llmService;
-    }
 
     /** 分页查询 LLM 列表 */
     @GetMapping

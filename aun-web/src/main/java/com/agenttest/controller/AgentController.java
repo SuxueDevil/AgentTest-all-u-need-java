@@ -8,6 +8,7 @@ import com.agenttest.pojo.dto.AgentUpdateDTO;
 import com.agenttest.pojo.vo.AgentVO;
 import com.agenttest.service.AgentService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,14 +21,10 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/agents")
 @Validated
+@RequiredArgsConstructor
 public class AgentController {
 
     private final AgentService agentService;
-
-    /** 构造器注入 AgentService */
-    public AgentController(AgentService agentService) {
-        this.agentService = agentService;
-    }
 
     /**
      * 分页查询 Agent 列表。
@@ -70,7 +67,8 @@ public class AgentController {
      * @return 更新后的 AgentVO
      */
     @PutMapping("/{id}")
-    public Response<AgentVO> update(@PathVariable Long id, @RequestBody AgentUpdateDTO dto) {
+    public Response<AgentVO> update(@PathVariable Long id,
+                                    @RequestBody AgentUpdateDTO dto) {
         return Response.success(agentService.update(id, dto));
     }
 

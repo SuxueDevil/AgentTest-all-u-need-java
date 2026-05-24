@@ -16,6 +16,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -35,18 +36,13 @@ import java.util.stream.Collectors;
  * @since 2026-05-21
  */
 @Service
+@RequiredArgsConstructor
 public class LLMServiceImpl implements LLMService {
 
     private static final Logger log = LoggerFactory.getLogger(LLMServiceImpl.class);
 
     private final LLMMapper llmMapper;
     private final EvaluationResultMapper evaluationResultMapper;
-
-    /** 构造器注入 */
-    public LLMServiceImpl(LLMMapper llmMapper, EvaluationResultMapper evaluationResultMapper) {
-        this.llmMapper = llmMapper;
-        this.evaluationResultMapper = evaluationResultMapper;
-    }
 
     /**
      * 分页查询 LLM 模型列表。

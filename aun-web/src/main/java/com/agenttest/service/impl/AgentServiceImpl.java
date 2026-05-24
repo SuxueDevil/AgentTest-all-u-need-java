@@ -16,6 +16,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -36,6 +37,7 @@ import java.util.stream.Collectors;
  * </ul>
  */
 @Service
+@RequiredArgsConstructor
 public class AgentServiceImpl implements AgentService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentServiceImpl.class);
@@ -43,14 +45,6 @@ public class AgentServiceImpl implements AgentService {
     private final AgentMapper agentMapper;
     private final RestTemplate restTemplate;
     private final EvaluationResultMapper evaluationResultMapper;
-
-    /** 构造器注入 */
-    public AgentServiceImpl(AgentMapper agentMapper, RestTemplate restTemplate,
-                             EvaluationResultMapper evaluationResultMapper) {
-        this.agentMapper = agentMapper;
-        this.restTemplate = restTemplate;
-        this.evaluationResultMapper = evaluationResultMapper;
-    }
 
     // ==================== 公开方法 ====================
 

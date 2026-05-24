@@ -10,6 +10,7 @@ import com.agenttest.pojo.dto.QuestionUpdateDTO;
 import com.agenttest.pojo.vo.QuestionVO;
 import com.agenttest.service.QuestionService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -32,14 +33,10 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/questions")
 @Validated
+@RequiredArgsConstructor
 public class QuestionController {
 
     private final QuestionService questionService;
-
-    /** 构造器注入 */
-    public QuestionController(QuestionService questionService) {
-        this.questionService = questionService;
-    }
 
     // ==================== CRUD ====================
 

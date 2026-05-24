@@ -3,6 +3,7 @@ package com.agenttest.generator;
 import com.agenttest.pojo.dto.QuestionGenerateDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Component;
 
@@ -16,15 +17,12 @@ import java.util.stream.Collectors;
  * 返回 JSON 数组经 Jackson 解析为 GeneratedQuestion 列表。
  */
 @Component
+@RequiredArgsConstructor
 public class QuestionGenerator {
 
     private static final Logger log = LoggerFactory.getLogger(QuestionGenerator.class);
 
     private final ChatClient chatClient;
-
-    public QuestionGenerator(ChatClient chatClient) {
-        this.chatClient = chatClient;
-    }
 
     /**
      * 批量生成题目。
