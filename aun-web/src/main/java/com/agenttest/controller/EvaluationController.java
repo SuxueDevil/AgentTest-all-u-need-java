@@ -10,6 +10,7 @@ import com.agenttest.pojo.vo.EvaluationTaskVO;
 import com.agenttest.pojo.vo.TaskProgressVO;
 import com.agenttest.service.EvaluationService;
 import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,6 +23,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/evaluation")
+@Validated
 public class EvaluationController {
 
     private final EvaluationService evaluationService;

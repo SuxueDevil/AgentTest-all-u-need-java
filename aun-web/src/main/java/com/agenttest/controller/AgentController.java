@@ -8,6 +8,7 @@ import com.agenttest.pojo.dto.AgentUpdateDTO;
 import com.agenttest.pojo.vo.AgentVO;
 import com.agenttest.service.AgentService;
 import jakarta.validation.Valid;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/agents")
+@Validated
 public class AgentController {
 
     private final AgentService agentService;
