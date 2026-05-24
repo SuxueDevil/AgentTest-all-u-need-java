@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 评分引擎 — 根据评测维度对 Agent 响应进行打分。
@@ -65,9 +66,9 @@ public class ScoringEngine {
         double total = 0.0;
         double weightSum = 0.0;
         for (DimensionConfig dim : dimensions) {
-            DimensionScore ds = findScore(dimensionScores, dim.getName());
-            if (ds != null) {
-                total += ds.getScore() * dim.getWeight();
+            Optional<DimensionScore> ds = findScore(dimensionScores, dim.getName());
+            if (ds.isPresent()) {
+                total += ds.get().getScore() * dim.getWeight();
                 weightSum += dim.getWeight();
             }
         }
@@ -108,9 +109,16 @@ public class ScoringEngine {
         return "表现较差";
     }
 
-    private DimensionScore findScore(List<DimensionScore> scores, String name) {
+    /**
+     * 按维度名查找得分明细。
+     *
+     * @param scores 得分明细列表
+     * @param name   维度标识
+     * @return Optional，存在则包含匹配的 DimensionScore
+     */
+    private Optional<DimensionScore> findScore(List<DimensionScore> scores, String name) {
         return scores.stream()
                 .filter(s -> s.getDimensionName().equals(name))
-                .findFirst().orElse(null);
+                .findFirst();
     }
 }
